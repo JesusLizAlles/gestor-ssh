@@ -2,10 +2,12 @@ import { appendFile, mkdir, stat, truncate, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, net, safeStorage, session as electronSession, shell } from 'electron'
 import electronUpdater from 'electron-updater'
-import { HOST_KEY_EVENT, SESSION_EVENT, TRANSFER_EVENT, UPDATE_STATE_EVENT } from '@shared/ipc'
+import { HOST_KEY_EVENT, MCP_ACTIVITY_EVENT, MCP_STATUS_EVENT, SESSION_EVENT, TRANSFER_EVENT, UPDATE_STATE_EVENT } from '@shared/ipc'
 import { GeoIp } from './geoip'
 import { HostKeyPrompter } from './host-prompt'
 import { registerIpc } from './ipc'
+import { McpController } from './mcp/server'
+import { runModuleCall } from './modules'
 import { SessionManager } from './ssh/sessions'
 import { KnownHosts } from './store/known-hosts'
 import { SecretVault, type SecretCipher } from './store/secrets'
@@ -176,7 +178,22 @@ app.whenReady().then(() => {
     log: updaterLog
   })
 
-  registerIpc({ store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, updater, window: () => mainWindow })
+  const mcp = new McpController({
+    dataDir,
+    version: app.getVersion(),
+    tools: {
+      listServers: () => store.list(),
+      isConnected: (id) => sessions.isConnected(id),
+      session: (id) => sessions.get(id),
+      call: (session, call, args) => runModuleCall(session, call, args) as never,
+      geoLookup: (ips) => geoip.lookup(ips)
+    },
+    onStatus: (status) => send(MCP_STATUS_EVENT, status),
+    onActivity: (entry) => send(MCP_ACTIVITY_EVENT, entry)
+  })
+  void mcp.init().catch((err) => console.error('MCP:', err))
+
+  registerIpc({ store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, updater, mcp, window: () => mainWindow })
 
   const openWindow = () => {
     mainWindow = createWindow()
@@ -196,7 +213,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) openWindow()
   })
-  app.on('before-quit', () => sessions.closeAll())
+  app.on('before-quit', () => {
+    sessions.closeAll()
+    void mcp.stop()
+  })
 })
 
 app.on('window-all-closed', () => {

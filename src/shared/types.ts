@@ -1,3 +1,4 @@
+import type { McpActivity, McpStatus } from './mcp'
 import type { ModuleCall, ModuleCalls, ModuleId } from './modules'
 
 export type Environment = 'dev' | 'test' | 'prod'
@@ -188,6 +189,15 @@ export interface ServerApi {
   /** Cierra la app, instala la versión descargada y la vuelve a abrir. */
   installUpdate(): Promise<void>
   onUpdateState(listener: (state: UpdateState) => void): () => void
+
+  /** Servidor MCP local para Claude. */
+  mcpStatus(): Promise<McpStatus>
+  mcpSetEnabled(enabled: boolean): Promise<McpStatus>
+  mcpSetPort(port: number): Promise<McpStatus>
+  mcpRegenerateToken(): Promise<McpStatus>
+  mcpActivity(): Promise<McpActivity[]>
+  onMcpStatus(listener: (status: McpStatus) => void): () => void
+  onMcpActivity(listener: (entry: McpActivity) => void): () => void
 }
 
 /** Mensajes por el MessagePort de cada terminal. */

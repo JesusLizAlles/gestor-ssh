@@ -17,6 +17,7 @@ import {
 import { z, ZodError } from 'zod'
 import type { GeoIp } from './geoip'
 import type { HostKeyPrompter } from './host-prompt'
+import type { McpController } from './mcp/server'
 import { detectModules, isModuleCall, runModuleCall } from './modules'
 import { setSudoPassword } from './ssh/commands'
 import { sudoReadText, sudoWriteText } from './sudo-files'
@@ -49,6 +50,7 @@ export interface IpcDeps {
   hostPrompt: HostKeyPrompter
   geoip: GeoIp
   updater: Updater
+  mcp: McpController
   window: () => BrowserWindow | null
 }
 
@@ -86,7 +88,7 @@ async function uniqueLocalPath(dir: string, name: string): Promise<string> {
 }
 
 export function registerIpc(deps: IpcDeps): void {
-  const { store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, updater, window } = deps
+  const { store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, updater, mcp, window } = deps
   // Ficheros elegidos para subir: startUpload los usa por token, sin recibir rutas locales del renderer.
   const pendingUploads = new Map<string, { serverId: string; remoteDir: string; localPaths: string[]; conflicts: Set<string> }>()
 
@@ -314,7 +316,12 @@ export function registerIpc(deps: IpcDeps): void {
     geoipLookup: async (_sender, ips) => geoip.lookup(z.array(z.string().max(64)).max(5000).parse(ips)),
     setSudoPassword: async (_sender, id, password) => {
       await setSudoPassword(session(id), z.string().min(1).max(1000).parse(password))
-    }
+    },
+    mcpStatus: () => mcp.status(),
+    mcpSetEnabled: (_sender, enabled) => mcp.setEnabled(z.boolean().parse(enabled)),
+    mcpSetPort: (_sender, port) => mcp.setPort(z.number().int().min(1024).max(65535).parse(port)),
+    mcpRegenerateToken: () => mcp.regenerateToken(),
+    mcpActivity: async () => mcp.listActivity()
   }
 
   for (const [method, handler] of Object.entries(handlers) as [ApiChannel, Handlers[ApiChannel]][]) {

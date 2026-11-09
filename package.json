@@ -1,7 +1,7 @@
 {
   "name": "gestor-ssh",
   "productName": "Gestor SSH",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Gestor visual de servidores por SSH: explorador de ficheros SFTP, transferencias y terminal",
   "private": true,
   "type": "module",
@@ -22,6 +22,7 @@
     "test:e2e": "electron-vite build && vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "electron-updater": "^6.8.11",
     "mmdb-lib": "3.0.3",
     "ssh2": "^1.17.0",

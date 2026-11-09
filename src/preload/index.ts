@@ -4,6 +4,8 @@ import {
   API_CHANNELS,
   channelName,
   HOST_KEY_EVENT,
+  MCP_ACTIVITY_EVENT,
+  MCP_STATUS_EVENT,
   SESSION_EVENT,
   TERMINAL_PORT_EVENT,
   TERMINAL_PORT_MESSAGE,
@@ -11,6 +13,7 @@ import {
   UPDATE_STATE_EVENT,
   type IpcEnvelope
 } from '@shared/ipc'
+import type { McpActivity, McpStatus } from '@shared/mcp'
 import type { HostKeyRequest, ServerApi, SessionEvent, TransferInfo, UpdateState } from '@shared/types'
 
 /** Suscripción a un evento del proceso principal; devuelve la función para darse de baja. */
@@ -34,7 +37,9 @@ const api = {
   onHostKey: (listener: (request: HostKeyRequest) => void) => subscribe(HOST_KEY_EVENT, listener),
   onTransfer: (listener: (transfer: TransferInfo) => void) => subscribe(TRANSFER_EVENT, listener),
   onSession: (listener: (event: SessionEvent) => void) => subscribe(SESSION_EVENT, listener),
-  onUpdateState: (listener: (state: UpdateState) => void) => subscribe(UPDATE_STATE_EVENT, listener)
+  onUpdateState: (listener: (state: UpdateState) => void) => subscribe(UPDATE_STATE_EVENT, listener),
+  onMcpStatus: (listener: (status: McpStatus) => void) => subscribe(MCP_STATUS_EVENT, listener),
+  onMcpActivity: (listener: (entry: McpActivity) => void) => subscribe(MCP_ACTIVITY_EVENT, listener)
 } as unknown as ServerApi
 
 contextBridge.exposeInMainWorld('api', api)

@@ -98,6 +98,15 @@ El registro queda en `logs/updater.log` dentro de la carpeta de datos.
 Para publicar una versión: subir `version` en `package.json`, etiquetar `vX.Y.Z` y subir la etiqueta. El CI genera los
 instaladores y los `latest*.yml` en una Release en borrador; al publicarla, las apps instaladas la detectan.
 
+## Claude (servidor MCP)
+
+La app incluye un servidor MCP local para que Claude analice la seguridad y el estado de los servidores **que tengas conectados**. Se activa desde el botón «Claude MCP» de la barra de estado (viene desactivado).
+
+- Herramientas de **solo lectura**: `list_servers`, `ssh_access_report` (fallos por IP con país, accesos correctos), `network_connections`, `active_sessions`, `fail2ban_status`, `firewall_status`, `services_list`, `service_logs` y `geoip_lookup`.
+- Escucha solo en `127.0.0.1` (puerto 47821 por defecto) y exige un token Bearer aleatorio (guardado en `mcp.json`, con permisos 0600). Rechaza peticiones de navegador (con `Origin`) y cabeceras `Host` que no sean de loopback.
+- La contraseña de sudo nunca llega a Claude: si hace falta, se introduce en la app.
+- El diálogo muestra el comando para Claude Code (`claude mcp add --transport http …`), la configuración para Claude Desktop (vía `mcp-remote`) y el registro de las consultas.
+
 ## Arquitectura
 
 ```

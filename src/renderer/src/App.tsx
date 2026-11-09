@@ -11,6 +11,7 @@ import { Icon, type IconName } from './components/Icon'
 import { ServerDialog } from './components/ServerDialog'
 import { TerminalView } from './components/TerminalView'
 import { TransfersPanel } from './components/TransfersPanel'
+import { McpControls } from './components/McpControls'
 import { UpdateControls } from './components/UpdateControls'
 import { ApacheView } from './components/modules/ApacheView'
 import { MysqlView } from './components/modules/MysqlView'
@@ -459,6 +460,7 @@ export function App() {
         )}
         {secretStatus && !secretStatus.persistent && <span style={{ color: 'var(--warn)' }}>Sin llavero: las contraseñas no se guardan en disco</span>}
         <div className="spacer" />
+        <McpControls />
         <UpdateControls />
         <button className="status-btn" onClick={() => setShowTransfers((v) => !v)}>
           <Icon name="transfer" /> Transferencias{activeTransfers ? ` (${activeTransfers} en curso)` : ''}
