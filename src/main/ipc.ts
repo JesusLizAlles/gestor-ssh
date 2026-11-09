@@ -14,8 +14,11 @@ import {
   type TerminalToRenderer,
   type UploadPlan
 } from '@shared/types'
-import { ZodError } from 'zod'
+import { z, ZodError } from 'zod'
 import type { HostKeyPrompter } from './host-prompt'
+import { detectModules, isModuleCall, runModuleCall } from './modules'
+import { setSudoPassword } from './ssh/commands'
+import { sudoReadText, sudoWriteText } from './sudo-files'
 import type { ServerSession, SessionManager } from './ssh/sessions'
 import { entryType } from './ssh/sftp'
 import { startTerminal } from './ssh/terminal'
@@ -168,9 +171,10 @@ export function registerIpc(deps: IpcDeps): void {
         await sftp.removeRecursive(target)
       }
     },
-    readTextFile: async (_sender, id, path) => {
+    readTextFile: async (_sender, id, path, sudo) => {
       const s = session(id)
       const target = remote(s, path)
+      if (sudo === true) return sudoReadText(s, target)
       const sftp = await s.sftp()
       const info = await sftp.stat(target)
       if (entryType(info.mode) !== 'file') throw new Error('Solo se pueden abrir ficheros')
@@ -185,6 +189,7 @@ export function registerIpc(deps: IpcDeps): void {
       const input = saveFileSchema.parse(raw)
       const s = session(input.serverId)
       const target = remote(s, input.path)
+      if (input.sudo) return sudoWriteText(s, target, input.content, input.expectedMtime)
       const sftp = await s.sftp()
       if (input.expectedMtime !== null) {
         const current = await sftp.stat(target).catch(() => null)
@@ -278,6 +283,26 @@ export function registerIpc(deps: IpcDeps): void {
       )
       port1.start()
       sender.postMessage(TERMINAL_PORT_EVENT, { terminalId }, [port2])
+    },
+
+    detectModules: async (_sender, raw) => {
+      const input = saveServerSchema.parse(raw)
+      // Si el servidor ya está conectado se usa esa conexión; si no, una temporal como en «Probar».
+      if (input.config.id && sessions.isConnected(input.config.id)) return detectModules(sessions.get(input.config.id))
+      const config: ServerConfig = { ...input.config, id: input.config.id ?? 'prueba' }
+      const temporary = await sessions.openTemporary(config, await mergeSecrets(vault, input))
+      try {
+        return await detectModules(temporary)
+      } finally {
+        temporary.close()
+      }
+    },
+    moduleCall: async (_sender, id, call, args) => {
+      if (!isModuleCall(call)) throw new Error('Operación desconocida')
+      return runModuleCall(session(id), call, args) as never
+    },
+    setSudoPassword: async (_sender, id, password) => {
+      await setSudoPassword(session(id), z.string().min(1).max(1000).parse(password))
     }
   }
 

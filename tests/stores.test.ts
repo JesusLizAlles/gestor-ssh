@@ -17,6 +17,7 @@ const input = (overrides: Partial<SaveServerInput['config']> = {}): SaveServerIn
     privateKeyPath: '',
     environment: 'prod',
     initialPath: '/var/www',
+    modules: [],
     ...overrides
   },
   secrets: { password: 'muy-secreta' }

@@ -4,6 +4,7 @@ import type { Client } from 'ssh2'
 import type { ConnectResult, ServerConfig, TestResult } from '@shared/types'
 import type { KnownHosts } from '../store/known-hosts'
 import type { Secrets } from '../store/secrets'
+import { runScript } from './commands'
 import { connectSsh, type HostDecision, type SshAuth } from './connect'
 import { openSftp, Sftp } from './sftp'
 
@@ -22,6 +23,8 @@ export interface SessionDeps {
 export class ServerSession {
   private browser: Promise<Sftp> | null = null
   private closedByUs = false
+  /** Contraseña de sudo de esta conexión (solo en memoria). Al empezar, la de la conexión si la hay. */
+  sudoPassword: string | null = null
   private readonly closeHandlers = new Set<() => void>()
 
   constructor(
@@ -52,28 +55,6 @@ export class ServerSession {
   /** Canal SFTP propio, para una transferencia: así se puede cancelar cerrándolo. */
   async dedicatedSftp(): Promise<Sftp> {
     return new Sftp(await openSftp(this.client))
-  }
-
-  /** Ejecuta un comando y devuelve su salida estándar (máx. 64 KB). */
-  exec(command: string, timeoutMs = 10_000): Promise<{ code: number | null; stdout: string }> {
-    return new Promise((resolve, reject) => {
-      this.client.exec(command, (err, stream) => {
-        if (err) return reject(err)
-        let stdout = ''
-        const timer = setTimeout(() => {
-          stream.close()
-          reject(new Error('El comando tardó demasiado'))
-        }, timeoutMs)
-        stream.on('data', (chunk: Buffer) => {
-          if (stdout.length < 65_536) stdout += chunk.toString('utf8')
-        })
-        stream.stderr.on('data', () => {})
-        stream.on('close', (code: number | null) => {
-          clearTimeout(timer)
-          resolve({ code, stdout })
-        })
-      })
-    })
   }
 
   onClose(handler: () => void): () => void {
@@ -132,12 +113,17 @@ export class SessionManager {
     }
   }
 
+  /** Conexión suelta (no queda registrada): para probar o detectar módulos desde el formulario. */
+  openTemporary(config: ServerConfig, secrets: Secrets): Promise<ServerSession> {
+    return this.open(config, secrets, false)
+  }
+
   /** Prueba la configuración del formulario: conecta, mira el sistema y cierra. */
   async test(config: ServerConfig, secrets: Secrets): Promise<TestResult> {
     const session = await this.open(config, secrets, false)
     try {
-      const system = await session.exec('uname -srm').then(
-        (r) => (r.code === 0 ? r.stdout.trim() || null : null),
+      const system = await runScript(session, 'uname -srm', { timeoutMs: 10_000 }).then(
+        (r) => (r.code === 0 ? r.stdout.toString('utf8').trim() || null : null),
         () => null
       )
       return { fingerprint: session.fingerprint, home: session.home, system }
@@ -178,6 +164,7 @@ export class SessionManager {
       const sftp = new Sftp(await openSftp(client))
       const home = await sftp.realpath('.')
       session = new ServerSession(config, client, fingerprint, home, sftp)
+      if (config.authMethod === 'password') session.sudoPassword = secrets.password ?? null
     } catch (err) {
       client.end()
       throw err

@@ -50,7 +50,11 @@ export class ServerStore {
   }
 
   private load(): Promise<ServersFile> {
-    this.file ??= readJson<ServersFile>(this.path, { version: 1, servers: [] })
+    // Los servidores guardados antes de que existieran los módulos no tienen el campo.
+    this.file ??= readJson<ServersFile>(this.path, { version: 1, servers: [] }).then((file) => {
+      file.servers = file.servers.map((s) => ({ ...s, modules: Array.isArray(s.modules) ? s.modules : [] }))
+      return file
+    })
     return this.file
   }
 }

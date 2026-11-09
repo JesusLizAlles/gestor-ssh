@@ -1,6 +1,7 @@
 // Prueba de humo de la app completa: Playwright controla Electron contra un sshd desechable.
 // Requiere `npm run build` (lo hace `npm run test:e2e`) y OpenSSH instalado (sshd y sftp-server).
 // E2E_SCREENSHOTS=/ruta guarda capturas de cada paso.
+import { execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core'
@@ -45,7 +46,8 @@ describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
       authMethod: 'privateKey',
       privateKeyPath: sshd.clientKeyPath,
       environment: 'test',
-      initialPath: www
+      initialPath: www,
+      modules: ['services', 'apache', 'mysql']
     }
     await writeFile(join(userData, 'servers.json'), JSON.stringify({ version: 1, servers: [server] }))
 
@@ -164,5 +166,53 @@ describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
     await page.locator('.tab-body:not(.hidden) .files').press('Delete')
     await page.getByRole('button', { name: 'Eliminar' }).click()
     await expect.poll(() => row('renombrada').count()).toBe(0)
+  })
+
+  it('abre el módulo de servicios y enseña el estado de uno', async () => {
+    await page.locator('.module-row', { hasText: 'Servicios' }).click()
+    await page.locator('.unit-row').first().waitFor({ timeout: 15_000 })
+    await page.getByPlaceholder('Buscar servicio…').fill('journald')
+    await page.locator('.unit-row', { hasText: 'systemd-journald' }).first().click()
+    await page.locator('.service-panel .state-pill.ok').waitFor()
+    await expect.poll(() => page.locator('.service-panel .service-name').textContent()).toBe('systemd-journald.service')
+    await page.locator('.log-text').waitFor()
+    await shot('07-servicios')
+  })
+
+  it('abre Apache y MySQL (instalados o no)', async () => {
+    await page.locator('.module-row', { hasText: 'Apache' }).click()
+    await page.locator('.tab-body:not(.hidden) .module-header, .tab-body:not(.hidden) .welcome:has-text("no está instalado")').first().waitFor({ timeout: 15_000 })
+    await shot('08-apache')
+    await page.locator('.module-row', { hasText: 'MySQL' }).click()
+    await page.locator('.tab-body:not(.hidden) .module-header, .tab-body:not(.hidden) .welcome:has-text("no está instalado")').first().waitFor({ timeout: 15_000 })
+    await shot('09-mysql')
+  })
+
+  it('el diálogo del servidor detecta los módulos', async () => {
+    await page.locator('.server').first().hover()
+    await page.locator('.server button[title="Editar"]').first().click()
+    await page.getByText('Detectar qué hay instalado').click()
+    await page.locator('.dialog .notice.ok', { hasText: 'Detectado' }).waitFor({ timeout: 15_000 })
+    await shot('10-detectar-modulos')
+    await page.locator('.dialog').getByRole('button', { name: 'Cancelar' }).click()
+  })
+
+  it('pide la contraseña de sudo cuando hace falta y se puede cancelar', async () => {
+    let needsPassword = true
+    try {
+      execFileSync('sudo', ['-n', 'true'], { stdio: 'ignore' })
+      needsPassword = false
+    } catch {
+      // sudo pide contraseña (o no hay sudo): es el caso que se prueba.
+    }
+    await page.locator('.module-row', { hasText: 'MySQL' }).click()
+    const installed = await page.locator('.tab-body:not(.hidden) .module-header').count()
+    if (!needsPassword || !installed) return
+    await page.locator('.tab-body:not(.hidden) .subtab', { hasText: 'Bases de datos' }).click()
+    await page.locator('.dialog h2', { hasText: 'Contraseña de sudo' }).waitFor()
+    // No se escribe ninguna contraseña: una incorrecta contaría como fallo de login en el equipo (pam_faillock).
+    await shot('11-sudo')
+    await page.locator('.dialog').getByRole('button', { name: 'Cancelar' }).click()
+    await page.locator('.tab-body:not(.hidden) .notice.error', { hasText: 'Cancelado' }).waitFor()
   })
 })

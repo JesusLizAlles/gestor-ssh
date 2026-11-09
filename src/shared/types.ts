@@ -1,3 +1,5 @@
+import type { ModuleCall, ModuleCalls, ModuleId } from './modules'
+
 export type Environment = 'dev' | 'test' | 'prod'
 export type AuthMethod = 'password' | 'privateKey' | 'agent'
 
@@ -14,6 +16,8 @@ export interface ServerConfig {
   environment: Environment
   /** Carpeta en la que se abre el explorador; vacío = la carpeta personal del usuario. */
   initialPath: string
+  /** Módulos de administración activados para este servidor. */
+  modules: ModuleId[]
 }
 
 export type SecretKey = 'password' | 'passphrase'
@@ -84,6 +88,8 @@ export interface SaveFileInput {
   content: string
   /** mtime que se leyó; si el fichero cambió desde entonces se avisa en lugar de pisarlo. */
   expectedMtime: number | null
+  /** Escribir como root (sudo). */
+  sudo?: boolean
 }
 
 export type TransferDirection = 'download' | 'upload'
@@ -146,7 +152,7 @@ export interface ServerApi {
   rename(serverId: string, from: string, to: string): Promise<void>
   remove(serverId: string, paths: string[]): Promise<void>
   createFile(serverId: string, path: string): Promise<void>
-  readTextFile(serverId: string, path: string): Promise<RemoteFile>
+  readTextFile(serverId: string, path: string, sudo?: boolean): Promise<RemoteFile>
   saveTextFile(input: SaveFileInput): Promise<{ mtime: number; size: number }>
 
   download(serverId: string, paths: string[]): Promise<TransferInfo[]>
@@ -159,6 +165,12 @@ export interface ServerApi {
   showInFolder(transferId: string): Promise<void>
 
   openTerminal(serverId: string, terminalId: string, cols: number, rows: number): Promise<void>
+
+  /** Conecta (o usa la conexión abierta) y mira qué módulos tienen sentido en el servidor. */
+  detectModules(input: SaveServerInput): Promise<ModuleId[]>
+  moduleCall<K extends ModuleCall>(serverId: string, call: K, args: ModuleCalls[K]['args']): Promise<ModuleCalls[K]['result']>
+  /** Comprueba la contraseña de sudo y la guarda en memoria mientras dure la conexión. */
+  setSudoPassword(serverId: string, password: string): Promise<void>
 
   onHostKey(listener: (request: HostKeyRequest) => void): () => void
   onTransfer(listener: (transfer: TransferInfo) => void): () => void

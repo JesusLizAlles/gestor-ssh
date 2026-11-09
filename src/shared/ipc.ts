@@ -39,7 +39,10 @@ export const API_CHANNELS = [
   'clearTransfers',
   'listTransfers',
   'showInFolder',
-  'openTerminal'
+  'openTerminal',
+  'detectModules',
+  'moduleCall',
+  'setSudoPassword'
 ] as const satisfies readonly ApiChannel[]
 
 /** Respuesta envuelta: así el mensaje de error llega limpio al renderer. */

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatSize, languageForFile } from '@shared/format'
 import { basename } from '@shared/remote-path'
-import { FILE_CHANGED_ERROR } from '@shared/types'
+import { FILE_CHANGED_ERROR, type ServerSummary } from '@shared/types'
+import { useSudo } from '../lib/sudo'
 import { monaco } from '../lib/monaco'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Icon } from './Icon'
 
 interface Props {
-  serverId: string
+  server: ServerSummary
   path: string
   active: boolean
   connected: boolean
@@ -17,7 +18,9 @@ interface Props {
 type Status = { kind: 'info' | 'ok' | 'error'; text: string } | null
 
 /** Editor de un fichero de texto del servidor. Guarda con Ctrl+S y avisa si otro lo cambió entretanto. */
-export function EditorView({ serverId, path, active, connected, onDirty }: Props) {
+export function EditorView({ server, path, active, connected, onDirty }: Props) {
+  const serverId = server.id
+  const withSudo = useSudo()
   const hostRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const savedVersion = useRef(0)
@@ -30,6 +33,10 @@ export function EditorView({ serverId, path, active, connected, onDirty }: Props
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<Status>(null)
   const [confirm, setConfirm] = useState<'overwrite' | 'reload' | null>(null)
+  /** Leer y guardar como root: se activa cuando falta permiso y el usuario lo pide. */
+  const [sudo, setSudo] = useState(false)
+  const [permissionProblem, setPermissionProblem] = useState<'read' | 'write' | null>(null)
+  const sudoRef = useRef(false)
   onDirtyRef.current = onDirty
 
   const markDirty = (value: boolean) => {
@@ -37,11 +44,14 @@ export function EditorView({ serverId, path, active, connected, onDirty }: Props
     onDirtyRef.current(value)
   }
 
-  const load = async () => {
+  const load = async (asRoot = sudoRef.current) => {
     setLoading(true)
     setLoadError(null)
+    setPermissionProblem(null)
     try {
-      const file = await window.api.readTextFile(serverId, path)
+      const file = asRoot
+        ? await withSudo(server, () => window.api.readTextFile(serverId, path, true))
+        : await window.api.readTextFile(serverId, path)
       const editor = editorRef.current
       if (!editor) return
       editor.getModel()?.setValue(file.content)
@@ -50,25 +60,30 @@ export function EditorView({ serverId, path, active, connected, onDirty }: Props
       markDirty(false)
       setStatus({ kind: 'info', text: formatSize(file.size) })
     } catch (err) {
-      setLoadError((err as Error).message)
+      const message = (err as Error).message
+      setLoadError(message)
+      if (!asRoot && message.startsWith('Permiso denegado')) setPermissionProblem('read')
     } finally {
       setLoading(false)
     }
   }
 
-  const save = async (force = false) => {
+  const enableSudo = (then: () => void) => {
+    sudoRef.current = true
+    setSudo(true)
+    setPermissionProblem(null)
+    then()
+  }
+
+  const save = async (force = false, asRoot = sudoRef.current) => {
     const editor = editorRef.current
     if (!editor || saving) return
     setSaving(true)
     setStatus({ kind: 'info', text: 'Guardando…' })
     const version = editor.getModel()!.getAlternativeVersionId()
     try {
-      const result = await window.api.saveTextFile({
-        serverId,
-        path,
-        content: editor.getValue(),
-        expectedMtime: force ? null : mtimeRef.current
-      })
+      const input = { serverId, path, content: editor.getValue(), expectedMtime: force ? null : mtimeRef.current, sudo: asRoot }
+      const result = asRoot ? await withSudo(server, () => window.api.saveTextFile(input)) : await window.api.saveTextFile(input)
       mtimeRef.current = result.mtime
       savedVersion.current = version
       markDirty(editor.getModel()!.getAlternativeVersionId() !== version)
@@ -78,7 +93,10 @@ export function EditorView({ serverId, path, active, connected, onDirty }: Props
       if (message === FILE_CHANGED_ERROR) {
         setStatus(null)
         setConfirm('overwrite')
-      } else setStatus({ kind: 'error', text: message })
+      } else {
+        setStatus({ kind: 'error', text: message })
+        if (!asRoot && message.startsWith('Permiso denegado')) setPermissionProblem('write')
+      }
     } finally {
       setSaving(false)
     }
@@ -132,10 +150,31 @@ export function EditorView({ serverId, path, active, connected, onDirty }: Props
         <span className="path-label" title={path}>
           {path}
         </span>
+        {sudo && (
+          <span className="badge prod" title="Se lee y se guarda como root">
+            sudo
+          </span>
+        )}
         <div className="spacer" />
         {status && <span className={`editor-status ${status.kind}`}>{status.text}</span>}
+        {permissionProblem === 'write' && (
+          <button className="primary" onClick={() => enableSudo(() => void save(false, true))}>
+            Guardar con sudo
+          </button>
+        )}
       </div>
-      {loadError && <div className="files-error">{loadError}</div>}
+      {loadError && (
+        <div className="files-error">
+          {loadError}
+          {permissionProblem === 'read' && (
+            <div style={{ marginTop: 10 }}>
+              <button className="primary" onClick={() => enableSudo(() => void load(true))}>
+                Abrir con sudo
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="editor-host" ref={hostRef} style={loadError ? { display: 'none' } : undefined} />
       {confirm === 'overwrite' && (
         <ConfirmDialog

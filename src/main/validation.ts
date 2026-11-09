@@ -29,7 +29,8 @@ export const saveServerSchema = z.object({
     authMethod: z.enum(['password', 'privateKey', 'agent']),
     privateKeyPath: z.string().max(4096),
     environment: z.enum(['dev', 'test', 'prod']),
-    initialPath: z.string().max(4096)
+    initialPath: z.string().max(4096),
+    modules: z.array(z.enum(['services', 'apache', 'mysql'])).max(20).transform((list) => [...new Set(list)])
   }),
   secrets: z.object({ password: secretValue, passphrase: secretValue }).optional()
 })
@@ -38,7 +39,8 @@ export const saveFileSchema = z.object({
   serverId: idSchema,
   path: remotePathSchema,
   content: z.string().max(20 * 1024 * 1024),
-  expectedMtime: z.number().nullable()
+  expectedMtime: z.number().nullable(),
+  sudo: z.boolean().optional()
 })
 
 export const terminalSizeSchema = z.number().int().min(1).max(1000)

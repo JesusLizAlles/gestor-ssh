@@ -4,7 +4,7 @@ Gestor de servidores por SSH de escritorio: **explorador de ficheros** (SFTP), *
 **editor** de ficheros remotos y **terminal**, todo sobre una misma conexión. Está hecho con Electron, TypeScript y React,
 con el mismo estilo que [Gestor BBDD](https://github.com/JesusLizAlles/gestor-bbdd).
 
-Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.1.0)**.
+Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.2.0)**.
 
 ## Qué hace ya
 
@@ -36,6 +36,21 @@ Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.1.0)**.
 - **Terminal** (xterm.js) en pestañas, varios por servidor, con colores, cambio de tamaño, título de la ventana y enlaces
   clicables. Copiar <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>, pegar <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>
   (en macOS, <kbd>Cmd</kbd>+<kbd>C</kbd>/<kbd>V</kbd>) o con el clic derecho. Al salir del shell, <kbd>Enter</kbd> abre otro.
+- **Módulos de administración** por servidor. Se activan en el diálogo del servidor («Detectar qué hay instalado» los
+  marca solos) y aparecen debajo del servidor en el panel lateral; cada uno se abre en su pestaña:
+  - **Servicios** (systemd): lista con buscador y filtros (en marcha, fallidos, todos); estado, desde cuándo, PID y
+    memoria; arrancar, parar, reiniciar, recargar, habilitar/deshabilitar al inicio; registro de `journalctl` y fichero de
+    la unidad (se abre en el editor). Parar, reiniciar y deshabilitar piden confirmación; en producción, todo.
+  - **Apache**: versión, servicio, sitios (activar/desactivar con `a2ensite`/`a2dissite` en Debian/Ubuntu, y después
+    «probar configuración y recargar»), ficheros de configuración, `configtest`, hosts virtuales (`-S`), módulos (`-M`) y
+    registro de errores.
+  - **MySQL / MariaDB**: servicio, bases de datos con número de tablas y tamaño, variables de estado, procesos en curso
+    (con «Matar»), ficheros `.cnf` y registro. Entra con `sudo mysql` (root por el socket, lo normal en Debian/Ubuntu) o,
+    sin sudo, con el `~/.my.cnf` del usuario.
+- **sudo**: lo que necesita root se intenta primero sin contraseña (`sudo -n`, para quien tiene NOPASSWD). Si sudo la pide,
+  se pregunta una vez y se guarda solo en memoria mientras dura la conexión (si el servidor usa contraseña, se prueba
+  primero esa). El editor ofrece «Abrir con sudo» / «Guardar con sudo» cuando falta permiso, y guarda sin cambiar
+  propietario ni permisos del fichero.
 - **Una sola conexión por servidor**: explorador, terminales y transferencias van por canales de la misma conexión SSH.
   Si se cae, las pestañas lo indican y ofrecen reconectar; el explorador vuelve a la carpeta donde estaba.
 
@@ -69,6 +84,9 @@ Requiere Node 24.
 | `src/main/ssh` | Conexión con verificación de huella, envoltorio de SFTP con promesas, sesiones por servidor y terminal. |
 | `src/main/store` | Servidores, secretos cifrados y huellas conocidas, en ficheros JSON 0600. |
 | `src/main/transfers.ts` | Cola de transferencias con progreso y cancelación. |
+| `src/main/modules.ts` | Llamadas de los módulos (servicios, Apache, MySQL), con sus argumentos validados con zod. |
+| `src/main/ssh/commands.ts` | Ejecución de scripts en el servidor, con sudo. |
+| `src/shared/modules.ts` | Tipos de los módulos y analizadores de la salida de `systemctl`, `apachectl` y `mysql`. |
 | `src/preload` | Puente mínimo que expone `window.api` y entrega los MessagePort de los terminales. |
 | `src/renderer` | Interfaz React. |
 | `tests` | Unitarios e integración contra un `sshd` desechable (Vitest). |
@@ -83,6 +101,10 @@ Decisiones:
   que un `cat` de un log enorme no bloquea la app.
 - **Sin módulos nativos**: `ssh2` es JS puro y xterm.js corre en la ventana. No hace falta `node-pty` (solo serviría para
   un terminal *local*), así que se empaqueta igual en los tres sistemas sin recompilar nada.
+- **Scripts en base64**: los comandos de los módulos se mandan como `sh -c 'eval "$(printf %s <base64> | base64 -d)"'`.
+  Así el shell de login del usuario (bash, zsh, fish, csh…) no interpreta nada y el script llega intacto a `sh`. La entrada
+  estándar queda solo para la contraseña de sudo, que solo se envía después de que `sudo -n` diga que hace falta; para
+  escribir como root, el contenido va antes por SFTP a un temporal 0600 y `sudo` lo vuelca con `cat tmp > destino`.
 - **Las rutas locales nunca vienen de la ventana**: los diálogos de guardar y abrir los abre el proceso principal, y la
   subida se confirma con un token, no con rutas.
 
@@ -101,6 +123,10 @@ Los tests de integración y el E2E arrancan su propio servidor OpenSSH **sin roo
 claves recién generadas, y entran con el usuario que ejecuta los tests (`tests/sshd.ts`). Solo necesitan `sshd`,
 `sftp-server` y `ssh-keygen` instalados; si no están, se saltan. Trabajan en una carpeta temporal que se borra al acabar.
 
+Los tests de sudo nunca envían una contraseña: con NOPASSWD (como en CI) prueban leer y escribir un fichero de root; sin
+él, solo comprueban que la app pide la contraseña. Una contraseña incorrecta contaría como intento fallido y
+`pam_faillock` podría bloquear la cuenta de quien ejecuta los tests.
+
 `E2E_SCREENSHOTS=/ruta npm run test:e2e` guarda una captura de cada paso. `GESTOR_SCREENSHOT=/ruta.png npm start` guarda una
 captura de la ventana y cierra la app (solo fuera de la app empaquetada).
 
@@ -116,8 +142,10 @@ captura de la ventana y cierra la app (solo fuera de la app empaquetada).
 
 ## Limitaciones conocidas
 
-- **Permisos**: todo se hace con el usuario de la conexión. Para editar ficheros de root (p. ej. `/etc/nginx`) hay que usar
-  el terminal con `sudo`; la app aún no sabe elevar permisos.
+- **Permisos**: el explorador y las transferencias van con el usuario de la conexión; solo el editor y los módulos usan
+  sudo. Para subir ficheros a carpetas de root, súbelos a tu carpeta y muévelos desde el terminal.
+- **Módulos**: necesitan systemd. Activar/desactivar sitios de Apache solo con la estructura de Debian/Ubuntu; en
+  Red Hat y Arch se listan y se editan. MySQL sin sudo necesita un `~/.my.cnf` en el servidor.
 - **SSH**: sin saltos encadenados (*jump hosts*), sin leer `~/.ssh/config` y sin reenvío de puertos todavía.
 - **Transferencias**: no se reanudan; si se corta la conexión, hay que volver a empezar. No se puede arrastrar ficheros
   desde el escritorio a la ventana.

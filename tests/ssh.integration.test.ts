@@ -5,6 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ServerConfig, TerminalToRenderer, TransferInfo } from '@shared/types'
 import { SessionManager } from '../src/main/ssh/sessions'
 import { startTerminal, type TerminalChannel } from '../src/main/ssh/terminal'
+import { runScript } from '../src/main/ssh/commands'
+import { detectModules, runModuleCall } from '../src/main/modules'
+import { SUDO_PASSWORD_REQUIRED } from '@shared/modules'
+import { execFileSync } from 'node:child_process'
 import { KnownHosts } from '../src/main/store/known-hosts'
 import { TransferManager } from '../src/main/transfers'
 import { tempDir } from './helpers'
@@ -30,7 +34,8 @@ describe.skipIf(!sshdAvailable)('contra un sshd real', () => {
       authMethod: 'privateKey',
       privateKeyPath: sshd.clientKeyPath,
       environment: 'dev',
-      initialPath: ''
+      initialPath: '',
+      modules: []
     }
     knownHosts = new KnownHosts(await tempDir())
     sessions = new SessionManager({
@@ -236,6 +241,87 @@ describe.skipIf(!sshdAvailable)('contra un sshd real', () => {
       while (!closed && Date.now() - start < 5000) await new Promise((r) => setTimeout(r, 20))
       expect(closed).toBe(true)
       expect(messages.at(-1)).toEqual({ type: 'exit', reason: 'Sesión terminada' })
+    })
+  })
+
+  describe('comandos y módulos', () => {
+    // ¿Puede el usuario de los tests usar sudo sin contraseña? (en CI sí; en un equipo normal, no)
+    const sudoWithoutPassword = (() => {
+      try {
+        execFileSync('sudo', ['-n', 'true'], { stdio: 'ignore' })
+        return true
+      } catch {
+        return false
+      }
+    })()
+
+    it('ejecuta scripts con comillas, barras y variables sea cual sea el shell de login', async () => {
+      await sessions.connect(config, {})
+      const session = sessions.get(config.id)
+      const result = await runScript(session, `printf '%s|' "it's" 'a\\b' "$((40+2))"; echo; echo error >&2; exit 3`)
+      expect(result.stdout.toString()).toBe("it's|a\\b|42|\n")
+      expect(result.stderr).toBe('error\n')
+      expect(result.code).toBe(3)
+    })
+
+    // Nunca se prueba una contraseña incorrecta contra el sudo real: cuenta como intento fallido y
+    // pam_faillock puede bloquear la cuenta de quien ejecuta los tests.
+    it.skipIf(sudoWithoutPassword)('sin NOPASSWD, sudo pide la contraseña (sin llegar a enviar ninguna)', async () => {
+      const session = sessions.get(config.id)
+      expect(session.sudoPassword).toBeNull()
+      await expect(runScript(session, 'id -u', { sudo: true })).rejects.toThrow(SUDO_PASSWORD_REQUIRED)
+    })
+
+    it.skipIf(!sudoWithoutPassword)('con sudo sin contraseña, ejecuta como root y edita ficheros de root', async () => {
+      const session = sessions.get(config.id)
+      expect((await runScript(session, 'id -u', { sudo: true })).stdout.toString().trim()).toBe('0')
+      const { sudoReadText, sudoWriteText } = await import('../src/main/sudo-files')
+      const file = join(sshd.dir, 'de-root.conf')
+      execFileSync('sudo', ['sh', '-c', `printf 'a=1\\n' > '${file}' && chmod 640 '${file}' && chown root:root '${file}'`])
+      const read = await sudoReadText(session, file)
+      expect(read.content).toBe('a=1\n')
+      await sudoWriteText(session, file, 'a=2\n', read.mtime)
+      expect(execFileSync('sudo', ['cat', file]).toString()).toBe('a=2\n')
+      expect(execFileSync('sudo', ['stat', '-c', '%U %a', file]).toString().trim()).toBe('root 640')
+    })
+
+    it('detecta systemd y lista servicios', async () => {
+      const session = sessions.get(config.id)
+      const hasSystemd = (() => {
+        try {
+          execFileSync('systemctl', ['--version'], { stdio: 'ignore' })
+          return true
+        } catch {
+          return false
+        }
+      })()
+      expect((await detectModules(session)).includes('services')).toBe(hasSystemd)
+      if (!hasSystemd) return
+      const units = (await runModuleCall(session, 'services.list', {})) as { name: string; active: string }[]
+      expect(units.length).toBeGreaterThan(5)
+      const journald = units.find((u) => u.name === 'systemd-journald.service')
+      expect(journald?.active).toBe('active')
+      const detail = await runModuleCall(session, 'services.show', { unit: 'systemd-journald.service' })
+      expect(detail).toMatchObject({ name: 'systemd-journald.service', active: 'active' })
+      const logs = (await runModuleCall(session, 'services.logs', { unit: 'systemd-journald.service', lines: 10, sudo: false })) as { text: string }
+      expect(typeof logs.text).toBe('string')
+    })
+
+    it('valida los argumentos de las llamadas', async () => {
+      const session = sessions.get(config.id)
+      await expect(runModuleCall(session, 'services.action', { unit: 'x; reboot.service', action: 'stop' })).rejects.toThrow(/no válido/)
+      await expect(runModuleCall(session, 'services.action', { unit: 'ssh.service', action: 'mask' })).rejects.toThrow()
+      await expect(runModuleCall(session, 'files.tail', { path: 'relativa', lines: 10 })).rejects.toThrow(/no válida/)
+    })
+
+    it('los resúmenes de Apache y MySQL funcionan esté o no instalado', async () => {
+      const session = sessions.get(config.id)
+      const apache = (await runModuleCall(session, 'apache.overview', {})) as { installed: boolean; ctl: string | null }
+      expect(apache.installed).toBe(apache.ctl !== null)
+      const mysql = (await runModuleCall(session, 'mysql.overview', {})) as { installed: boolean }
+      expect(typeof mysql.installed).toBe('boolean')
+      const tail = (await runModuleCall(session, 'files.tail', { path: join(sshd.dir, 'sftp', 'b2.txt'), lines: 10 })) as { text: string }
+      expect(tail.text).toBe('dos')
     })
   })
 })

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { MODULES, type ModuleId } from '@shared/modules'
 import type { AuthMethod, SaveServerInput, SecretKey, SecretsPatch, SecretStorageStatus, ServerConfig, ServerSummary } from '@shared/types'
 
 type Draft = Omit<ServerConfig, 'id'> & { id?: string }
@@ -12,7 +13,8 @@ function emptyDraft(): Draft {
     authMethod: 'privateKey',
     privateKeyPath: '',
     environment: 'dev',
-    initialPath: ''
+    initialPath: '',
+    modules: []
   }
 }
 
@@ -72,7 +74,7 @@ export function ServerDialog({ initial, template, secretStatus, onClose, onSaved
     return initial ? { ...config, id } : config
   })
   const [secrets, setSecrets] = useState<SecretsPatch>({})
-  const [busy, setBusy] = useState<'test' | 'save' | 'forget' | null>(null)
+  const [busy, setBusy] = useState<'test' | 'save' | 'forget' | 'detect' | null>(null)
   const [result, setResult] = useState<{ kind: 'ok' | 'error' | 'warn'; text: string } | null>(null)
   const stored = new Set(initial?.storedSecrets ?? [])
 
@@ -124,6 +126,24 @@ export function ServerDialog({ initial, template, secretStatus, onClose, onSaved
     try {
       await window.api.forgetHostKey(initial.id)
       setResult({ kind: 'warn', text: 'Huella olvidada: la próxima conexión pedirá aceptar la huella nueva.' })
+    } catch (err) {
+      setResult({ kind: 'error', text: (err as Error).message })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const toggleModule = (id: ModuleId, on: boolean) =>
+    setDraft((d) => ({ ...d, modules: on ? [...d.modules.filter((m) => m !== id), id] : d.modules.filter((m) => m !== id) }))
+
+  const detect = async () => {
+    setBusy('detect')
+    setResult(null)
+    try {
+      const found = await window.api.detectModules(input())
+      setDraft((d) => ({ ...d, modules: [...new Set([...d.modules, ...found])] }))
+      const names = MODULES.filter((m) => found.includes(m.id)).map((m) => m.name)
+      setResult({ kind: names.length ? 'ok' : 'warn', text: names.length ? `Detectado: ${names.join(', ')}.` : 'No se ha detectado nada de lo que hay en la lista.' })
     } catch (err) {
       setResult({ kind: 'error', text: (err as Error).message })
     } finally {
@@ -227,6 +247,30 @@ export function ServerDialog({ initial, template, secretStatus, onClose, onSaved
 
             <label htmlFor="srv-path">Carpeta inicial</label>
             <input id="srv-path" value={draft.initialPath} placeholder="Carpeta personal (~)" onChange={(e) => set('initialPath', e.target.value)} />
+
+            <label style={{ alignSelf: 'start', paddingTop: 4 }}>Módulos</label>
+            <div className="module-picker">
+              {MODULES.map((m) => (
+                <label key={m.id} className="check module-option">
+                  <input type="checkbox" checked={draft.modules.includes(m.id)} onChange={(e) => toggleModule(m.id, e.target.checked)} />
+                  <span>
+                    {m.name}
+                    <span className="note"> — {m.description}</span>
+                  </span>
+                </label>
+              ))}
+              <div>
+                <button
+                  type="button"
+                  className="link"
+                  disabled={!!busy || !draft.host.trim() || !draft.username.trim()}
+                  onClick={() => void detect()}
+                  title="Se conecta y mira qué hay instalado"
+                >
+                  {busy === 'detect' ? 'Detectando…' : 'Detectar qué hay instalado'}
+                </button>
+              </div>
+            </div>
           </div>
           {result && (
             <div className={`notice ${result.kind}`} style={{ marginTop: 12, marginBottom: 0 }}>

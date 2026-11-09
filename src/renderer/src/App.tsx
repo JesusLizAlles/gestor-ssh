@@ -7,10 +7,14 @@ import { ContextMenu, type MenuItem } from './components/ContextMenu'
 import { EditorView } from './components/EditorView'
 import { FileBrowser } from './components/FileBrowser'
 import { HostKeyDialog } from './components/HostKeyDialog'
-import { Icon } from './components/Icon'
+import { Icon, type IconName } from './components/Icon'
 import { ServerDialog } from './components/ServerDialog'
 import { TerminalView } from './components/TerminalView'
 import { TransfersPanel } from './components/TransfersPanel'
+import { ApacheView } from './components/modules/ApacheView'
+import { MysqlView } from './components/modules/MysqlView'
+import { ServicesView } from './components/modules/ServicesView'
+import { moduleInfo, type ModuleId } from '@shared/modules'
 
 type ConnState =
   | { state: 'connecting' }
@@ -25,6 +29,7 @@ type Tab =
   | (BaseTab & { kind: 'files'; startPath: string; path: string; epoch: number })
   | (BaseTab & { kind: 'terminal'; initialCommand?: string; title: string | null })
   | (BaseTab & { kind: 'editor'; path: string; dirty: boolean })
+  | (BaseTab & { kind: 'module'; moduleId: ModuleId })
 
 type Dialog =
   | { kind: 'server'; initial: ServerSummary | null }
@@ -32,6 +37,7 @@ type Dialog =
   | { kind: 'closeTabs'; tabIds: string[]; then?: () => void }
 
 const ENV_LABEL = { dev: 'DEV', test: 'TEST', prod: 'PROD' } as const
+const MODULE_ICONS: Record<ModuleId, IconName> = { services: 'gear', apache: 'globe', mysql: 'database' }
 
 export function App() {
   const [servers, setServers] = useState<ServerSummary[]>([])
@@ -116,6 +122,14 @@ export function App() {
     addTab({ id: crypto.randomUUID(), serverId: server.id, kind: 'terminal', initialCommand: cwd ? cdCommand(cwd) : undefined, title: null })
   }
 
+  const openModule = async (server: ServerSummary, moduleId: ModuleId) => {
+    setSelectedServerId(server.id)
+    const existing = tabs.find((t) => t.kind === 'module' && t.serverId === server.id && t.moduleId === moduleId)
+    if ((await ensureConnected(server)) === null) return
+    if (existing) return setActiveTabId(existing.id)
+    addTab({ id: crypto.randomUUID(), serverId: server.id, kind: 'module', moduleId })
+  }
+
   const openEditor = (serverId: string, path: string) => {
     const existing = tabs.find((t) => t.kind === 'editor' && t.serverId === serverId && t.path === path)
     if (existing) return setActiveTabId(existing.id)
@@ -164,6 +178,7 @@ export function App() {
     const items: MenuItem[] = [
       { label: 'Abrir ficheros', onSelect: () => void openFiles(server) },
       { label: 'Abrir terminal', onSelect: () => void openTerminal(server) },
+      ...server.modules.map((id) => ({ label: `Abrir ${moduleInfo(id).name}`, onSelect: () => void openModule(server, id) })),
       connected
         ? { label: 'Desconectar', onSelect: () => disconnect(server) }
         : { label: 'Conectar', onSelect: () => void ensureConnected(server) },
@@ -200,6 +215,7 @@ export function App() {
   const tabTitle = (tab: Tab): string => {
     if (tab.kind === 'files') return basename(tab.path)
     if (tab.kind === 'editor') return basename(tab.path)
+    if (tab.kind === 'module') return moduleInfo(tab.moduleId).name
     return tab.title ?? serverById.get(tab.serverId)?.name ?? 'Terminal'
   }
 
@@ -263,6 +279,21 @@ export function App() {
                     </button>
                   </div>
                 </div>
+                {server.modules.length > 0 && (conn?.state === 'connected' || selectedServerId === server.id) && (
+                  <div className="server-modules">
+                    {server.modules.map((id) => (
+                      <div
+                        key={id}
+                        className={`module-row ${activeTab?.kind === 'module' && activeTab.serverId === server.id && activeTab.moduleId === id ? 'active' : ''}`}
+                        onClick={() => void openModule(server, id)}
+                        title={moduleInfo(id).description}
+                      >
+                        <Icon name={MODULE_ICONS[id]} />
+                        <span>{moduleInfo(id).name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {conn?.state === 'error' && (
                   <div className="notice error" style={{ margin: '2px 8px 6px', padding: '5px 8px' }}>
                     {conn.error}
@@ -290,9 +321,9 @@ export function App() {
                       closeTabs([tab.id])
                     }
                   }}
-                  title={tab.kind === 'terminal' ? (tab.title ?? '') : tab.path}
+                  title={tab.kind === 'terminal' ? (tab.title ?? '') : tab.kind === 'module' ? moduleInfo(tab.moduleId).description : tab.path}
                 >
-                  <Icon name={tab.kind === 'files' ? 'folder' : tab.kind === 'terminal' ? 'terminal' : 'file'} />
+                  <Icon name={tab.kind === 'files' ? 'folder' : tab.kind === 'terminal' ? 'terminal' : tab.kind === 'module' ? MODULE_ICONS[tab.moduleId] : 'file'} />
                   <span className="title">{tabTitle(tab)}</span>
                   {tab.kind === 'editor' && tab.dirty && <span className="dirty">●</span>}
                   <span className="server-tag">{server?.name}</span>
@@ -332,7 +363,7 @@ export function App() {
           const active = tab.id === activeTabId
           return (
             <div key={tab.id} className={`tab-body ${active ? '' : 'hidden'}`}>
-              {!connected && tab.kind !== 'terminal' && (
+              {!connected && tab.kind !== 'terminal' && tab.kind !== 'module' && (
                 <div className="notice warn" style={{ margin: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ flex: 1 }}>{conn?.state === 'connecting' ? 'Conectando…' : `Sin conexión con ${server.name}.`}</span>
                   {conn?.state !== 'connecting' && (
@@ -365,9 +396,26 @@ export function App() {
                   onTitle={(title) => updateTab(tab.id, { title: title || null })}
                 />
               )}
+              {tab.kind === 'module' &&
+                (connected ? (
+                  <div className="module-host" key={conn.fingerprint + String(tab.moduleId)}>
+                    {tab.moduleId === 'services' && <ServicesView server={server} onOpenFile={(path) => openEditor(server.id, path)} />}
+                    {tab.moduleId === 'apache' && <ApacheView server={server} onOpenFile={(path) => openEditor(server.id, path)} />}
+                    {tab.moduleId === 'mysql' && <MysqlView server={server} onOpenFile={(path) => openEditor(server.id, path)} />}
+                  </div>
+                ) : (
+                  <div className="notice warn" style={{ margin: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ flex: 1 }}>{conn?.state === 'connecting' ? 'Conectando…' : `Sin conexión con ${server.name}.`}</span>
+                    {conn?.state !== 'connecting' && (
+                      <button onClick={() => void ensureConnected(server)}>
+                        <Icon name="connect" /> Reconectar
+                      </button>
+                    )}
+                  </div>
+                ))}
               {tab.kind === 'editor' && (
                 <EditorView
-                  serverId={server.id}
+                  server={server}
                   path={tab.path}
                   active={active}
                   connected={connected}
