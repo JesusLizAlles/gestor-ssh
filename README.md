@@ -4,7 +4,7 @@ Gestor de servidores por SSH de escritorio: **explorador de ficheros** (SFTP), *
 **editor** de ficheros remotos y **terminal**, todo sobre una misma conexión. Está hecho con Electron, TypeScript y React,
 con el mismo estilo que [Gestor BBDD](https://github.com/JesusLizAlles/gestor-bbdd).
 
-Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.2.0)**.
+Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.3.0)**.
 
 ## Qué hace ya
 
@@ -47,6 +47,18 @@ Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.2.0)**.
   - **MySQL / MariaDB**: servicio, bases de datos con número de tablas y tamaño, variables de estado, procesos en curso
     (con «Matar»), ficheros `.cnf` y registro. Entra con `sudo mysql` (root por el socket, lo normal en Debian/Ubuntu) o,
     sin sudo, con el `~/.my.cnf` del usuario.
+  - **Seguridad**:
+    - *Resumen*: conexiones establecidas, IPs remotas, puertos expuestos, intentos SSH fallidos y accesos correctos de las
+      últimas 24 h, usuarios conectados e IPs bloqueadas por fail2ban; las IPs con más intentos fallidos y las conectadas.
+    - *Conexiones* (`ss`): agrupadas por IP (Internet, red interna, local; la tuya marcada como «tú») o todas, con
+      filtro y refresco automático cada 5 s. Con sudo se ve qué proceso tiene cada conexión.
+    - *Puertos abiertos*: qué escucha en cada puerto y si está **expuesto** (todas las interfaces) o solo en local.
+    - *Accesos SSH* (journal, `auth.log` o `secure`): intentos fallidos por IP con los usuarios probados y accesos
+      correctos, en 24 h, 7 o 30 días.
+    - *Sesiones*: quién está conectado (`who`) y últimos accesos (`last`).
+    - *Fail2ban*: jails con sus contadores, IPs bloqueadas (desbloquear) y bloqueo manual. Desde los intentos fallidos se
+      puede bloquear una IP con la jail de SSH. **Nunca deja bloquear la IP desde la que estás conectado.**
+    - *Cortafuegos*: estado y reglas de UFW, firewalld, nftables o iptables, solo lectura.
 - **sudo**: lo que necesita root se intenta primero sin contraseña (`sudo -n`, para quien tiene NOPASSWD). Si sudo la pide,
   se pregunta una vez y se guarda solo en memoria mientras dura la conexión (si el servidor usa contraseña, se prueba
   primero esa). El editor ofrece «Abrir con sudo» / «Guardar con sudo» cuando falta permiso, y guarda sin cambiar
@@ -86,6 +98,8 @@ Requiere Node 24.
 | `src/main/transfers.ts` | Cola de transferencias con progreso y cancelación. |
 | `src/main/modules.ts` | Llamadas de los módulos (servicios, Apache, MySQL), con sus argumentos validados con zod. |
 | `src/main/ssh/commands.ts` | Ejecución de scripts en el servidor, con sudo. |
+| `src/main/security.ts` | Llamadas del módulo de seguridad (ss, registro de sshd, who/last, fail2ban, cortafuegos). |
+| `src/shared/security.ts` | Analizadores de `ss`, del registro de sshd, de `who` y de fail2ban, y clasificación de IPs. |
 | `src/shared/modules.ts` | Tipos de los módulos y analizadores de la salida de `systemctl`, `apachectl` y `mysql`. |
 | `src/preload` | Puente mínimo que expone `window.api` y entrega los MessagePort de los terminales. |
 | `src/renderer` | Interfaz React. |
@@ -144,6 +158,9 @@ captura de la ventana y cierra la app (solo fuera de la app empaquetada).
 
 - **Permisos**: el explorador y las transferencias van con el usuario de la conexión; solo el editor y los módulos usan
   sudo. Para subir ficheros a carpetas de root, súbelos a tu carpeta y muévelos desde el terminal.
+- **Seguridad**: el cortafuegos es de solo lectura (cambiar reglas a distancia puede dejarte fuera); para bloquear IPs
+  hace falta fail2ban. En los ficheros de syslog no se filtra por fecha (no guardan el año): se analiza lo último.
+  Sin sudo, `ss` no enseña los procesos de otros usuarios y el registro de accesos puede estar incompleto.
 - **Módulos**: necesitan systemd. Activar/desactivar sitios de Apache solo con la estructura de Debian/Ubuntu; en
   Red Hat y Arch se listan y se editan. MySQL sin sudo necesita un `~/.my.cnf` en el servidor.
 - **SSH**: sin saltos encadenados (*jump hosts*), sin leer `~/.ssh/config` y sin reenvío de puertos todavía.

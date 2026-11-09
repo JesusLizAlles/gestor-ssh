@@ -47,7 +47,7 @@ describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
       privateKeyPath: sshd.clientKeyPath,
       environment: 'test',
       initialPath: www,
-      modules: ['services', 'apache', 'mysql']
+      modules: ['services', 'apache', 'mysql', 'security']
     }
     await writeFile(join(userData, 'servers.json'), JSON.stringify({ version: 1, servers: [server] }))
 
@@ -214,5 +214,21 @@ describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
     await shot('11-sudo')
     await page.locator('.dialog').getByRole('button', { name: 'Cancelar' }).click()
     await page.locator('.tab-body:not(.hidden) .notice.error', { hasText: 'Cancelado' }).waitFor()
+  })
+
+  it('seguridad: resumen, conexiones (con la propia) y puertos', async () => {
+    await page.locator('.module-row', { hasText: 'Seguridad' }).click()
+    const body = page.locator('.tab-body:not(.hidden)')
+    await body.locator('.stat-card').first().waitFor()
+    await expect.poll(() => body.locator('.stat-card .stat-value').first().textContent(), { timeout: 15_000 }).not.toBe('…')
+    await shot('12-seguridad-resumen')
+    await body.locator('.subtab', { hasText: 'Conexiones' }).click()
+    await body.getByText('Ocultar localhost').click()
+    await body.locator('td', { hasText: '127.0.0.1' }).first().waitFor({ timeout: 15_000 })
+    await body.locator('.badge', { hasText: 'tú' }).first().waitFor()
+    await shot('13-seguridad-conexiones')
+    await body.locator('.subtab', { hasText: 'Puertos abiertos' }).click()
+    await body.locator('td.num', { hasText: String(sshd.port) }).first().waitFor({ timeout: 15_000 })
+    await shot('14-seguridad-puertos')
   })
 })

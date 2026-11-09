@@ -314,6 +314,39 @@ describe.skipIf(!sshdAvailable)('contra un sshd real', () => {
       await expect(runModuleCall(session, 'files.tail', { path: 'relativa', lines: 10 })).rejects.toThrow(/no válida/)
     })
 
+    it('seguridad: ve la conexión de la propia app, sesiones y registro (sin sudo)', async () => {
+      const session = sessions.get(config.id)
+      const result = (await runModuleCall(session, 'security.connections', { sudo: false })) as {
+        sockets: { state: string; localPort: string; peerAddress: string }[]
+        clientIp: string | null
+      }
+      expect(result.clientIp).toBe('127.0.0.1')
+      expect(result.sockets.some((s) => s.state === 'ESTAB' && s.localPort === String(sshd.port) && s.peerAddress === '127.0.0.1')).toBe(true)
+      expect(result.sockets.some((s) => s.state === 'LISTEN' && s.localPort === String(sshd.port))).toBe(true)
+      const sessionsResult = (await runModuleCall(session, 'security.sessions', {})) as { who: unknown[]; last: string }
+      expect(Array.isArray(sessionsResult.who)).toBe(true)
+      const ssh = (await runModuleCall(session, 'security.ssh', { sudo: false, hours: 24 })) as { events: unknown[]; source: string }
+      expect(Array.isArray(ssh.events)).toBe(true)
+    })
+
+    it('seguridad: nunca bloquea la IP desde la que está conectada la app', async () => {
+      const session = sessions.get(config.id)
+      // Se rechaza antes de llegar a sudo o a fail2ban.
+      await expect(runModuleCall(session, 'security.ban', { jail: 'sshd', ip: '127.0.0.1', ban: true })).rejects.toThrow(/te dejaría sin acceso/)
+      await expect(runModuleCall(session, 'security.ban', { jail: 'sshd', ip: 'no-es-ip', ban: true })).rejects.toThrow(/IP no válida/)
+      await expect(runModuleCall(session, 'security.ban', { jail: 'a;b', ip: '203.0.113.9', ban: true })).rejects.toThrow(/jail no válida/)
+    })
+
+    it.skipIf(!sudoWithoutPassword)('seguridad con sudo: fail2ban y cortafuegos responden', async () => {
+      const session = sessions.get(config.id)
+      const f2b = (await runModuleCall(session, 'security.fail2ban', {})) as { installed: boolean }
+      expect(typeof f2b.installed).toBe('boolean')
+      const fw = (await runModuleCall(session, 'security.firewall', {})) as { text: string }
+      expect(typeof fw.text).toBe('string')
+      const conns = (await runModuleCall(session, 'security.connections', { sudo: true })) as { sockets: { process: string | null }[] }
+      expect(conns.sockets.some((s) => s.process === 'sshd' || s.process === 'sshd-session')).toBe(true)
+    })
+
     it('los resúmenes de Apache y MySQL funcionan esté o no instalado', async () => {
       const session = sessions.get(config.id)
       const apache = (await runModuleCall(session, 'apache.overview', {})) as { installed: boolean; ctl: string | null }

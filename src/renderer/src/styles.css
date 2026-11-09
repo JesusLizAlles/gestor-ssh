@@ -1232,3 +1232,71 @@ button.link:hover:not(:disabled) {
   height: 22px;
   font-size: 12px;
 }
+
+/* Seguridad */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.stat-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.stat-card.ok {
+  border-left-color: var(--ok);
+}
+.stat-card.warn {
+  border-left-color: var(--warn);
+}
+.stat-card.error {
+  border-left-color: var(--danger);
+}
+.stat-card.clickable {
+  cursor: pointer;
+}
+.stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stat-card.error .stat-value {
+  color: #ffb3ae;
+}
+.stat-card.warn .stat-value {
+  color: var(--warn);
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.two-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.result-table th.num,
+.result-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.jails {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.jail-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+}
+.jail-card .service-head {
+  margin-bottom: 8px;
+}

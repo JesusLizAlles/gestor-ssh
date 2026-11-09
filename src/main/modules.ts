@@ -10,11 +10,13 @@ import {
   splitSections,
   type ModuleCall,
   type ModuleCalls,
+  MODULE_IDS,
   type ModuleId,
   type MysqlQuery,
   type ServiceDetail
 } from '@shared/modules'
 import { shellQuote } from '@shared/shell'
+import { securityHandlers, securitySchemas } from './security'
 import { outputText, runScript } from './ssh/commands'
 import type { ServerSession } from './ssh/sessions'
 
@@ -41,7 +43,8 @@ const schemas: { [K in ModuleCall]: z.ZodType<ModuleCalls[K]['args']> } = {
   'apache.site': z.object({ name: z.string().refine(isSiteName, 'nombre de sitio no válido'), enable: z.boolean() }),
   'mysql.overview': empty,
   'mysql.query': z.object({ query: z.enum(['databases', 'status', 'processlist']), sudo: z.boolean() }),
-  'mysql.kill': z.object({ id: z.number().int().positive(), sudo: z.boolean() })
+  'mysql.kill': z.object({ id: z.number().int().positive(), sudo: z.boolean() }),
+  ...securitySchemas
 }
 
 const text = (buffer: Buffer) => buffer.toString('utf8')
@@ -204,7 +207,8 @@ const handlers: Handlers = {
   },
   'mysql.kill': async (session, { id, sudo }) => {
     await mysql(session, `KILL ${id}`, sudo)
-  }
+  },
+  ...securityHandlers
 }
 
 export function isModuleCall(call: unknown): call is ModuleCall {
@@ -221,6 +225,7 @@ const DETECT = `
 command -v systemctl >/dev/null 2>&1 && echo services
 if command -v apache2ctl >/dev/null 2>&1 || command -v apachectl >/dev/null 2>&1 || command -v httpd >/dev/null 2>&1; then echo apache; fi
 if command -v mariadbd >/dev/null 2>&1 || command -v mysqld >/dev/null 2>&1 || command -v mariadb >/dev/null 2>&1 || command -v mysql >/dev/null 2>&1; then echo mysql; fi
+command -v ss >/dev/null 2>&1 && echo security
 true
 `
 
@@ -228,5 +233,5 @@ true
 export async function detectModules(session: ServerSession): Promise<ModuleId[]> {
   const result = await runScript(session, DETECT)
   const found = new Set(text(result.stdout).split('\n').map((l) => l.trim()))
-  return (['services', 'apache', 'mysql'] as const).filter((id) => found.has(id))
+  return MODULE_IDS.filter((id) => found.has(id))
 }

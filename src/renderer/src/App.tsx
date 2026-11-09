@@ -13,6 +13,7 @@ import { TerminalView } from './components/TerminalView'
 import { TransfersPanel } from './components/TransfersPanel'
 import { ApacheView } from './components/modules/ApacheView'
 import { MysqlView } from './components/modules/MysqlView'
+import { SecurityView } from './components/modules/SecurityView'
 import { ServicesView } from './components/modules/ServicesView'
 import { moduleInfo, type ModuleId } from '@shared/modules'
 
@@ -37,7 +38,7 @@ type Dialog =
   | { kind: 'closeTabs'; tabIds: string[]; then?: () => void }
 
 const ENV_LABEL = { dev: 'DEV', test: 'TEST', prod: 'PROD' } as const
-const MODULE_ICONS: Record<ModuleId, IconName> = { services: 'gear', apache: 'globe', mysql: 'database' }
+const MODULE_ICONS: Record<ModuleId, IconName> = { services: 'gear', apache: 'globe', mysql: 'database', security: 'shield' }
 
 export function App() {
   const [servers, setServers] = useState<ServerSummary[]>([])
@@ -402,6 +403,7 @@ export function App() {
                     {tab.moduleId === 'services' && <ServicesView server={server} onOpenFile={(path) => openEditor(server.id, path)} />}
                     {tab.moduleId === 'apache' && <ApacheView server={server} onOpenFile={(path) => openEditor(server.id, path)} />}
                     {tab.moduleId === 'mysql' && <MysqlView server={server} onOpenFile={(path) => openEditor(server.id, path)} />}
+                    {tab.moduleId === 'security' && <SecurityView server={server} />}
                   </div>
                 ) : (
                   <div className="notice warn" style={{ margin: 8, display: 'flex', alignItems: 'center', gap: 10 }}>

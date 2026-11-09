@@ -1,7 +1,10 @@
 // Módulos de administración: vistas extra por servidor (servicios, Apache, MySQL…).
 // Aquí van los tipos que comparten los dos procesos y los analizadores de la salida de los comandos.
 
-export type ModuleId = 'services' | 'apache' | 'mysql'
+import type { ConnectionsResult, Fail2banResult, FirewallResult, SessionsResult, SshLogResult, SshPeriod } from './security'
+
+export type ModuleId = 'services' | 'apache' | 'mysql' | 'security'
+export const MODULE_IDS = ['services', 'apache', 'mysql', 'security'] as const satisfies readonly ModuleId[]
 
 export interface ModuleInfo {
   id: ModuleId
@@ -12,7 +15,12 @@ export interface ModuleInfo {
 export const MODULES: readonly ModuleInfo[] = [
   { id: 'services', name: 'Servicios', description: 'Servicios de systemd: estado, arrancar, parar, reiniciar, habilitar y registro.' },
   { id: 'apache', name: 'Apache', description: 'Estado, prueba de configuración, sitios (activar/desactivar), módulos y registro de errores.' },
-  { id: 'mysql', name: 'MySQL / MariaDB', description: 'Estado del servicio, bases de datos con su tamaño, procesos en curso, configuración y registro.' }
+  { id: 'mysql', name: 'MySQL / MariaDB', description: 'Estado del servicio, bases de datos con su tamaño, procesos en curso, configuración y registro.' },
+  {
+    id: 'security',
+    name: 'Seguridad',
+    description: 'Conexiones e IPs, puertos abiertos, accesos SSH fallidos y correctos, sesiones, fail2ban y cortafuegos.'
+  }
 ]
 
 export const moduleInfo = (id: ModuleId): ModuleInfo => MODULES.find((m) => m.id === id)!
@@ -116,6 +124,12 @@ export interface ModuleCalls {
   'mysql.overview': { args: Record<string, never>; result: MysqlOverview }
   'mysql.query': { args: { query: MysqlQuery; sudo: boolean }; result: TableResult }
   'mysql.kill': { args: { id: number; sudo: boolean }; result: void }
+  'security.connections': { args: { sudo: boolean }; result: ConnectionsResult }
+  'security.ssh': { args: { sudo: boolean; hours: SshPeriod }; result: SshLogResult }
+  'security.sessions': { args: Record<string, never>; result: SessionsResult }
+  'security.fail2ban': { args: Record<string, never>; result: Fail2banResult }
+  'security.ban': { args: { jail: string; ip: string; ban: boolean }; result: void }
+  'security.firewall': { args: Record<string, never>; result: FirewallResult }
 }
 
 export type ModuleCall = keyof ModuleCalls

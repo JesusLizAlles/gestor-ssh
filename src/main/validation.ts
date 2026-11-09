@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MODULE_IDS } from '@shared/modules'
 
 export const idSchema = z.string().min(1).max(100)
 export const uuidSchema = z.uuid()
@@ -30,7 +31,7 @@ export const saveServerSchema = z.object({
     privateKeyPath: z.string().max(4096),
     environment: z.enum(['dev', 'test', 'prod']),
     initialPath: z.string().max(4096),
-    modules: z.array(z.enum(['services', 'apache', 'mysql'])).max(20).transform((list) => [...new Set(list)])
+    modules: z.array(z.enum(MODULE_IDS)).max(20).transform((list) => [...new Set(list)])
   }),
   secrets: z.object({ password: secretValue, passphrase: secretValue }).optional()
 })
