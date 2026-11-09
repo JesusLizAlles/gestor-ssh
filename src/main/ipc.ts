@@ -27,6 +27,7 @@ import type { KnownHosts } from './store/known-hosts'
 import type { Secrets, SecretVault } from './store/secrets'
 import type { ServerStore } from './store/servers'
 import type { TransferManager } from './transfers'
+import type { Updater } from './updater'
 import {
   idSchema,
   remotePathSchema,
@@ -47,6 +48,7 @@ export interface IpcDeps {
   transfers: TransferManager
   hostPrompt: HostKeyPrompter
   geoip: GeoIp
+  updater: Updater
   window: () => BrowserWindow | null
 }
 
@@ -84,7 +86,7 @@ async function uniqueLocalPath(dir: string, name: string): Promise<string> {
 }
 
 export function registerIpc(deps: IpcDeps): void {
-  const { store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, window } = deps
+  const { store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, updater, window } = deps
   // Ficheros elegidos para subir: startUpload los usa por token, sin recibir rutas locales del renderer.
   const pendingUploads = new Map<string, { serverId: string; remoteDir: string; localPaths: string[]; conflicts: Set<string> }>()
 
@@ -303,6 +305,10 @@ export function registerIpc(deps: IpcDeps): void {
       if (!isModuleCall(call)) throw new Error('Operación desconocida')
       return runModuleCall(session(id), call, args) as never
     },
+    updaterState: async () => updater.get(),
+    checkForUpdates: () => updater.check(true),
+    downloadUpdate: () => updater.download(),
+    installUpdate: async () => updater.install(),
     geoipStatus: () => geoip.status(),
     geoipDownload: () => geoip.download(),
     geoipLookup: async (_sender, ips) => geoip.lookup(z.array(z.string().max(64)).max(5000).parse(ips)),

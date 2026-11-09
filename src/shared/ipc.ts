@@ -1,8 +1,10 @@
 import type { ServerApi } from './types'
 
 /** Un canal IPC por método de la API; el nombre del canal es el del método. Los eventos van aparte. */
-export type ApiChannel = Exclude<keyof ServerApi, 'onHostKey' | 'onTransfer' | 'onSession'>
+export type ApiChannel = Exclude<keyof ServerApi, 'onHostKey' | 'onTransfer' | 'onSession' | 'onUpdateState'>
 
+/** Cada cambio de estado del actualizador. */
+export const UPDATE_STATE_EVENT = 'updater:state'
 /** El servidor presenta una huella que no conocemos: el usuario decide si fiarse. */
 export const HOST_KEY_EVENT = 'ssh:host-key'
 /** Cambios de estado y progreso de una transferencia. */
@@ -45,7 +47,11 @@ export const API_CHANNELS = [
   'setSudoPassword',
   'geoipStatus',
   'geoipDownload',
-  'geoipLookup'
+  'geoipLookup',
+  'updaterState',
+  'checkForUpdates',
+  'downloadUpdate',
+  'installUpdate'
 ] as const satisfies readonly ApiChannel[]
 
 /** Respuesta envuelta: así el mensaje de error llega limpio al renderer. */

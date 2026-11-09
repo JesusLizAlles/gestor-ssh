@@ -1334,3 +1334,71 @@ button.link:hover:not(:disabled) {
 .geo-attribution .link {
   font-size: 11px;
 }
+
+/* Actualizaciones (barra de estado, aviso y diálogo) */
+.update-btn {
+  height: auto;
+  background: none;
+  border: none;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 20px;
+}
+.update-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: none;
+}
+.update-btn.highlight {
+  color: #fff;
+  background: var(--accent);
+  border-radius: 3px;
+}
+.update-btn.highlight:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.update-flash {
+  color: var(--text);
+}
+.update-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 36px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+}
+.update-toast button.compact {
+  height: 24px;
+  padding: 0 10px;
+}
+.update-dialog {
+  width: 600px;
+}
+.update-dialog .progress {
+  height: 8px;
+  margin: 10px 0;
+}
+.update-notes {
+  white-space: pre-wrap;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 12px;
+  user-select: text;
+  margin-bottom: 10px;
+}
+.update-dialog a {
+  color: var(--accent-hover);
+}

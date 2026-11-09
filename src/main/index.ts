@@ -1,7 +1,8 @@
-import { writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, stat, truncate, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, net, safeStorage, session as electronSession, shell } from 'electron'
-import { HOST_KEY_EVENT, SESSION_EVENT, TRANSFER_EVENT } from '@shared/ipc'
+import electronUpdater from 'electron-updater'
+import { HOST_KEY_EVENT, SESSION_EVENT, TRANSFER_EVENT, UPDATE_STATE_EVENT } from '@shared/ipc'
 import { GeoIp } from './geoip'
 import { HostKeyPrompter } from './host-prompt'
 import { registerIpc } from './ipc'
@@ -10,6 +11,7 @@ import { KnownHosts } from './store/known-hosts'
 import { SecretVault, type SecretCipher } from './store/secrets'
 import { ServerStore } from './store/servers'
 import { TransferManager } from './transfers'
+import { Updater, type UpdaterBackend } from './updater'
 import icon from '../../resources/icon.png?asset'
 
 const here = import.meta.dirname
@@ -33,6 +35,48 @@ const electronCipher: SecretCipher = {
 }
 
 let mainWindow: BrowserWindow | null = null
+
+/** Registro del actualizador en logs/updater.log (se vacía al pasar de 1 MB). */
+function updaterLog(line: string): void {
+  const dir = app.getPath('logs')
+  const file = join(dir, 'updater.log')
+  void (async () => {
+    await mkdir(dir, { recursive: true })
+    const size = await stat(file).then((s) => s.size, () => 0)
+    if (size > 1_000_000) await truncate(file, 0)
+    await appendFile(file, `${new Date().toISOString()} ${line}\n`)
+  })().catch(() => {})
+}
+
+const RELEASES_URL = 'https://github.com/JesusLizAlles/gestor-ssh/releases'
+
+/**
+ * En macOS la app no va firmada con Developer ID y Squirrel.Mac no instalaría la versión nueva:
+ * se abre en el navegador el .dmg de la arquitectura de este equipo (nombre de electron-builder.yml).
+ */
+function openMacDownload(version: string): void {
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  void shell.openExternal(`${RELEASES_URL}/download/v${version}/gestor-ssh-${version}-mac-${arch}.dmg`)
+}
+
+/** electron-updater solo sirve en la app instalada y, en Linux, si se ejecuta como AppImage. */
+function updaterBackend(): { backend: UpdaterBackend | null; reason?: string; manualDownload?: (version: string) => void } {
+  if (!app.isPackaged) return { backend: null, reason: 'Las actualizaciones automáticas solo funcionan en la app instalada.' }
+  if (process.platform === 'linux' && !process.env.APPIMAGE) {
+    return { backend: null, reason: 'Esta instalación no es un AppImage: descarga las versiones nuevas desde GitHub.' }
+  }
+  const { autoUpdater } = electronUpdater
+  autoUpdater.logger = {
+    info: (m: unknown) => updaterLog(`INFO ${String(m)}`),
+    warn: (m: unknown) => updaterLog(`WARN ${String(m)}`),
+    error: (m: unknown) => updaterLog(`ERROR ${String(m)}`),
+    debug: (m: unknown) => updaterLog(`DEBUG ${String(m)}`)
+  }
+  return {
+    backend: autoUpdater as unknown as UpdaterBackend,
+    manualDownload: process.platform === 'darwin' ? openMacDownload : undefined
+  }
+}
 
 /**
  * Sin menú en Windows y Linux: así ningún atajo del menú le quita teclas al terminal.
@@ -122,7 +166,17 @@ app.whenReady().then(() => {
   // net.fetch usa el proxy del sistema (redes corporativas).
   const geoip = new GeoIp(dataDir, (url) => net.fetch(url))
 
-  registerIpc({ store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, window: () => mainWindow })
+  const { backend, reason, manualDownload } = updaterBackend()
+  const updater = new Updater({
+    backend,
+    currentVersion: app.getVersion(),
+    unsupportedReason: reason,
+    manualDownload,
+    send: (state) => send(UPDATE_STATE_EVENT, state),
+    log: updaterLog
+  })
+
+  registerIpc({ store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, updater, window: () => mainWindow })
 
   const openWindow = () => {
     mainWindow = createWindow()
@@ -137,6 +191,7 @@ app.whenReady().then(() => {
     })
   }
   openWindow()
+  updater.startAutoCheck()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) openWindow()

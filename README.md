@@ -4,7 +4,8 @@ Gestor de servidores por SSH de escritorio: **explorador de ficheros** (SFTP), *
 **editor** de ficheros remotos y **terminal**, todo sobre una misma conexión. Está hecho con Electron, TypeScript y React,
 con el mismo estilo que [Gestor BBDD](https://github.com/JesusLizAlles/gestor-bbdd).
 
-Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.4.0)**.
+Es un proyecto de código abierto con [licencia MIT](LICENSE). Los instaladores para Linux (AppImage), Windows y macOS están en
+[Releases](https://github.com/JesusLizAlles/gestor-ssh/releases), y la app se actualiza sola.
 
 ## Qué hace ya
 
@@ -82,6 +83,21 @@ npm run dist:linux   # AppImage (también dist:win y dist:mac)
 
 Requiere Node 24.
 
+## Actualizaciones automáticas
+
+La app busca versiones nuevas al arrancar (a los 10 s) y cada 6 horas en las Releases publicadas de GitHub. No descarga
+nada sin preguntar: en la barra de estado aparece «Versión X disponible», y desde ahí se descarga y se instala al reiniciar
+(o al cerrar la app). Pulsando el número de versión de la barra de estado se busca a mano.
+
+- **Linux**: solo con el AppImage (el fichero se sustituye por el nuevo).
+- **Windows**: el instalador nuevo se ejecuta en silencio y vuelve a abrir la app.
+- **macOS**: abre el `.dmg` en el navegador (ver limitaciones).
+
+El registro queda en `logs/updater.log` dentro de la carpeta de datos.
+
+Para publicar una versión: subir `version` en `package.json`, etiquetar `vX.Y.Z` y subir la etiqueta. El CI genera los
+instaladores y los `latest*.yml` en una Release en borrador; al publicarla, las apps instaladas la detectan.
+
 ## Arquitectura
 
 ```
@@ -103,6 +119,7 @@ Requiere Node 24.
 | `src/main/modules.ts` | Llamadas de los módulos (servicios, Apache, MySQL), con sus argumentos validados con zod. |
 | `src/main/ssh/commands.ts` | Ejecución de scripts en el servidor, con sudo. |
 | `src/main/security.ts` | Llamadas del módulo de seguridad (ss, registro de sshd, who/last, fail2ban, cortafuegos). |
+| `src/main/updater.ts` | Actualizaciones con electron-updater: buscar, descargar con progreso e instalar al reiniciar. |
 | `src/main/geoip.ts` | Descarga, comprobación y consulta local de la base de datos de países (mmdb-lib). |
 | `src/shared/security.ts` | Analizadores de `ss`, del registro de sshd, de `who` y de fail2ban, y clasificación de IPs. |
 | `src/shared/modules.ts` | Tipos de los módulos y analizadores de la salida de `systemctl`, `apachectl` y `mysql`. |
@@ -176,7 +193,8 @@ captura de la ventana y cierra la app (solo fuera de la app empaquetada).
   desde el escritorio a la ventana.
 - **Editor**: ficheros UTF-8 de hasta 5 MB. Los binarios o con otra codificación se descargan.
 - **Terminal**: si la conexión se cae, la sesión del shell se pierde (usa `tmux` en el servidor si necesitas que sobreviva).
-- **Actualizaciones**: no hay actualización automática todavía; las versiones se publican en las Releases del repositorio.
+- **Actualizaciones en macOS**: sin firma Developer ID, la app avisa de la versión nueva y abre el `.dmg` en el navegador;
+  hay que instalarla a mano.
 
 ## Créditos
 

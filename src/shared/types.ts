@@ -181,6 +181,13 @@ export interface ServerApi {
   onHostKey(listener: (request: HostKeyRequest) => void): () => void
   onTransfer(listener: (transfer: TransferInfo) => void): () => void
   onSession(listener: (event: SessionEvent) => void): () => void
+
+  updaterState(): Promise<UpdateState>
+  checkForUpdates(): Promise<UpdateState>
+  downloadUpdate(): Promise<UpdateState>
+  /** Cierra la app, instala la versión descargada y la vuelve a abrir. */
+  installUpdate(): Promise<void>
+  onUpdateState(listener: (state: UpdateState) => void): () => void
 }
 
 /** Mensajes por el MessagePort de cada terminal. */
@@ -192,6 +199,37 @@ export type TerminalToMain =
   | { type: 'close' }
 
 export type TerminalToRenderer = { type: 'data'; data: Uint8Array } | { type: 'exit'; reason: string }
+
+export type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+  | 'unsupported'
+
+/** Estado del actualizador automático, tal como lo ve la interfaz. */
+
+export interface UpdateState {
+  status: UpdateStatus
+  currentVersion: string
+  /** Versión nueva disponible o descargada. */
+  version?: string
+  /** Notas de la versión en texto plano. */
+  releaseNotes?: string
+  releaseDate?: string
+  /** 0–100 durante la descarga. */
+  percent?: number
+  error?: string
+  /** Por qué esta instalación no se puede actualizar sola (desarrollo, Linux sin AppImage…). */
+  reason?: string
+  /** La comprobación la pidió el usuario: la interfaz enseña el resultado aunque no haya nada nuevo. */
+  manual?: boolean
+  /** La versión nueva se descarga desde el navegador y se instala a mano (macOS sin firmar). */
+  manualInstall?: boolean
+}
 
 /** Base de datos local de países (DB-IP «IP to Country Lite»). */
 export interface GeoIpStatus {

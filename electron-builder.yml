@@ -14,6 +14,13 @@ files:
 asarUnpack: []
 # Sin módulos nativos (ssh2 funciona en JS puro y el terminal es xterm.js): no se recompila nada.
 npmRebuild: false
+# Actualizaciones automáticas (electron-updater): la app busca versiones en las Releases
+# publicadas de este repositorio público. Los borradores no cuentan hasta publicarlos.
+publish:
+  provider: github
+  owner: JesusLizAlles
+  repo: gestor-ssh
+  releaseType: release
 linux:
   target: [AppImage]
   category: Network
@@ -28,7 +35,8 @@ mac:
   target: [dmg]
   category: public.app-category.developer-tools
   # Sin certificado Developer ID: firma ad-hoc (sin ella Apple Silicon da la app por dañada).
-  # Gatekeeper pide autorizarla a mano la primera vez.
+  # Gatekeeper pide autorizarla a mano la primera vez, y Squirrel.Mac no puede instalar
+  # actualizaciones: la app avisa y abre el .dmg nuevo en el navegador.
   identity: '-'
   hardenedRuntime: false
   notarize: false

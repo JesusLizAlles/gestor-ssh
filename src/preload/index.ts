@@ -8,9 +8,10 @@ import {
   TERMINAL_PORT_EVENT,
   TERMINAL_PORT_MESSAGE,
   TRANSFER_EVENT,
+  UPDATE_STATE_EVENT,
   type IpcEnvelope
 } from '@shared/ipc'
-import type { HostKeyRequest, ServerApi, SessionEvent, TransferInfo } from '@shared/types'
+import type { HostKeyRequest, ServerApi, SessionEvent, TransferInfo, UpdateState } from '@shared/types'
 
 /** Suscripción a un evento del proceso principal; devuelve la función para darse de baja. */
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -32,7 +33,8 @@ const api = {
   ),
   onHostKey: (listener: (request: HostKeyRequest) => void) => subscribe(HOST_KEY_EVENT, listener),
   onTransfer: (listener: (transfer: TransferInfo) => void) => subscribe(TRANSFER_EVENT, listener),
-  onSession: (listener: (event: SessionEvent) => void) => subscribe(SESSION_EVENT, listener)
+  onSession: (listener: (event: SessionEvent) => void) => subscribe(SESSION_EVENT, listener),
+  onUpdateState: (listener: (state: UpdateState) => void) => subscribe(UPDATE_STATE_EVENT, listener)
 } as unknown as ServerApi
 
 contextBridge.exposeInMainWorld('api', api)
