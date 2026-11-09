@@ -52,6 +52,13 @@ describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
     app = await electron.launch({ args: ['.', `--user-data-dir=${userData}`, '--password-store=basic'], env: { ...process.env } as Record<string, string> })
     page = await app.firstWindow()
     await page.setViewportSize({ width: 1280, height: 800 })
+    // La ventana se crea oculta y se enseña en ready-to-show: hasta entonces no se puede capturar.
+    const visible = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible() ?? false)
+    for (let start = Date.now(); !(await visible()); ) {
+      if (Date.now() - start > 15_000) throw new Error('La ventana no llegó a mostrarse')
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    await page.locator('.server').waitFor()
   })
 
   afterAll(async () => {
