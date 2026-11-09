@@ -15,6 +15,7 @@ import {
   type UploadPlan
 } from '@shared/types'
 import { z, ZodError } from 'zod'
+import type { GeoIp } from './geoip'
 import type { HostKeyPrompter } from './host-prompt'
 import { detectModules, isModuleCall, runModuleCall } from './modules'
 import { setSudoPassword } from './ssh/commands'
@@ -45,6 +46,7 @@ export interface IpcDeps {
   sessions: SessionManager
   transfers: TransferManager
   hostPrompt: HostKeyPrompter
+  geoip: GeoIp
   window: () => BrowserWindow | null
 }
 
@@ -82,7 +84,7 @@ async function uniqueLocalPath(dir: string, name: string): Promise<string> {
 }
 
 export function registerIpc(deps: IpcDeps): void {
-  const { store, vault, knownHosts, sessions, transfers, hostPrompt, window } = deps
+  const { store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, window } = deps
   // Ficheros elegidos para subir: startUpload los usa por token, sin recibir rutas locales del renderer.
   const pendingUploads = new Map<string, { serverId: string; remoteDir: string; localPaths: string[]; conflicts: Set<string> }>()
 
@@ -301,6 +303,9 @@ export function registerIpc(deps: IpcDeps): void {
       if (!isModuleCall(call)) throw new Error('Operación desconocida')
       return runModuleCall(session(id), call, args) as never
     },
+    geoipStatus: () => geoip.status(),
+    geoipDownload: () => geoip.download(),
+    geoipLookup: async (_sender, ips) => geoip.lookup(z.array(z.string().max(64)).max(5000).parse(ips)),
     setSudoPassword: async (_sender, id, password) => {
       await setSudoPassword(session(id), z.string().min(1).max(1000).parse(password))
     }

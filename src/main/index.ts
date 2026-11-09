@@ -1,7 +1,8 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, BrowserWindow, Menu, safeStorage, session as electronSession, shell } from 'electron'
+import { app, BrowserWindow, Menu, net, safeStorage, session as electronSession, shell } from 'electron'
 import { HOST_KEY_EVENT, SESSION_EVENT, TRANSFER_EVENT } from '@shared/ipc'
+import { GeoIp } from './geoip'
 import { HostKeyPrompter } from './host-prompt'
 import { registerIpc } from './ipc'
 import { SessionManager } from './ssh/sessions'
@@ -118,7 +119,10 @@ app.whenReady().then(() => {
   })
   const transfers = new TransferManager({ emit: (info) => send(TRANSFER_EVENT, info) })
 
-  registerIpc({ store, vault, knownHosts, sessions, transfers, hostPrompt, window: () => mainWindow })
+  // net.fetch usa el proxy del sistema (redes corporativas).
+  const geoip = new GeoIp(dataDir, (url) => net.fetch(url))
+
+  registerIpc({ store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, window: () => mainWindow })
 
   const openWindow = () => {
     mainWindow = createWindow()

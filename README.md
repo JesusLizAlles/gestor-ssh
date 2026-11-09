@@ -4,7 +4,7 @@ Gestor de servidores por SSH de escritorio: **explorador de ficheros** (SFTP), *
 **editor** de ficheros remotos y **terminal**, todo sobre una misma conexión. Está hecho con Electron, TypeScript y React,
 con el mismo estilo que [Gestor BBDD](https://github.com/JesusLizAlles/gestor-bbdd).
 
-Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.3.0)**.
+Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.4.0)**.
 
 ## Qué hace ya
 
@@ -59,6 +59,10 @@ Es un proyecto con [licencia MIT](LICENSE). Estado: **MVP (0.3.0)**.
     - *Fail2ban*: jails con sus contadores, IPs bloqueadas (desbloquear) y bloqueo manual. Desde los intentos fallidos se
       puede bloquear una IP con la jail de SSH. **Nunca deja bloquear la IP desde la que estás conectado.**
     - *Cortafuegos*: estado y reglas de UFW, firewalld, nftables o iptables, solo lectura.
+    - **País de cada IP** (bandera y nombre) en todas las tablas, y los intentos fallidos sumados por país. Usa la base de
+      datos gratuita «IP to Country Lite» de [DB-IP](https://db-ip.com) (CC BY 4.0, unos 4 MB): se descarga cuando lo
+      pides, se guarda en este equipo y las consultas son locales, así que **las IPs no se envían a ningún servicio**.
+      Avisa cuando tiene más de mes y medio para actualizarla (DB-IP publica una nueva cada mes).
 - **sudo**: lo que necesita root se intenta primero sin contraseña (`sudo -n`, para quien tiene NOPASSWD). Si sudo la pide,
   se pregunta una vez y se guarda solo en memoria mientras dura la conexión (si el servidor usa contraseña, se prueba
   primero esa). El editor ofrece «Abrir con sudo» / «Guardar con sudo» cuando falta permiso, y guarda sin cambiar
@@ -99,6 +103,7 @@ Requiere Node 24.
 | `src/main/modules.ts` | Llamadas de los módulos (servicios, Apache, MySQL), con sus argumentos validados con zod. |
 | `src/main/ssh/commands.ts` | Ejecución de scripts en el servidor, con sudo. |
 | `src/main/security.ts` | Llamadas del módulo de seguridad (ss, registro de sshd, who/last, fail2ban, cortafuegos). |
+| `src/main/geoip.ts` | Descarga, comprobación y consulta local de la base de datos de países (mmdb-lib). |
 | `src/shared/security.ts` | Analizadores de `ss`, del registro de sshd, de `who` y de fail2ban, y clasificación de IPs. |
 | `src/shared/modules.ts` | Tipos de los módulos y analizadores de la salida de `systemctl`, `apachectl` y `mysql`. |
 | `src/preload` | Puente mínimo que expone `window.api` y entrega los MessagePort de los terminales. |
@@ -123,7 +128,7 @@ Decisiones:
   subida se confirma con un token, no con rutas.
 
 Los datos de la app se guardan en la carpeta de datos de Electron (`~/.config/Gestor SSH/` en Linux): `servers.json`,
-`secrets.json` y `known_hosts.json`, todos con permisos 0600.
+`secrets.json` y `known_hosts.json`, todos con permisos 0600, y la base de datos de países en `geoip/` si se descarga.
 
 ## Tests
 
@@ -140,6 +145,9 @@ claves recién generadas, y entran con el usuario que ejecuta los tests (`tests/
 Los tests de sudo nunca envían una contraseña: con NOPASSWD (como en CI) prueban leer y escribir un fichero de root; sin
 él, solo comprueban que la app pide la contraseña. Una contraseña incorrecta contaría como intento fallido y
 `pam_faillock` podría bloquear la cuenta de quien ejecuta los tests.
+
+`GEOIP_NETWORK=1` añade las pruebas que descargan la base de datos de países real de db-ip.com (en CI no se hacen, para
+no depender de la red).
 
 `E2E_SCREENSHOTS=/ruta npm run test:e2e` guarda una captura de cada paso. `GESTOR_SCREENSHOT=/ruta.png npm start` guarda una
 captura de la ventana y cierra la app (solo fuera de la app empaquetada).
@@ -169,3 +177,8 @@ captura de la ventana y cierra la app (solo fuera de la app empaquetada).
 - **Editor**: ficheros UTF-8 de hasta 5 MB. Los binarios o con otra codificación se descargan.
 - **Terminal**: si la conexión se cae, la sesión del shell se pierde (usa `tmux` en el servidor si necesitas que sobreviva).
 - **Actualizaciones**: no hay actualización automática todavía; las versiones se publican en las Releases del repositorio.
+
+## Créditos
+
+Países de las IPs: [IP Geolocation by DB-IP](https://db-ip.com), con licencia
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). La base de datos no va dentro de la app: se descarga aparte.

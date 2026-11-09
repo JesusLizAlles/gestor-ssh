@@ -172,6 +172,12 @@ export interface ServerApi {
   /** Comprueba la contraseña de sudo y la guarda en memoria mientras dure la conexión. */
   setSudoPassword(serverId: string, password: string): Promise<void>
 
+  geoipStatus(): Promise<GeoIpStatus>
+  /** Descarga (o actualiza) la base de datos de países de DB-IP. */
+  geoipDownload(): Promise<GeoIpStatus>
+  /** Código ISO del país de cada IP, consultado en local. */
+  geoipLookup(ips: string[]): Promise<Record<string, string | null>>
+
   onHostKey(listener: (request: HostKeyRequest) => void): () => void
   onTransfer(listener: (transfer: TransferInfo) => void): () => void
   onSession(listener: (event: SessionEvent) => void): () => void
@@ -186,6 +192,16 @@ export type TerminalToMain =
   | { type: 'close' }
 
 export type TerminalToRenderer = { type: 'data'; data: Uint8Array } | { type: 'exit'; reason: string }
+
+/** Base de datos local de países (DB-IP «IP to Country Lite»). */
+export interface GeoIpStatus {
+  available: boolean
+  /** Fecha de la versión (ms), según la propia base de datos. */
+  builtAt: number | null
+  sizeBytes: number
+  /** Tiene más de mes y medio: conviene actualizarla. */
+  outdated: boolean
+}
 
 /** Mensaje de error al guardar un fichero que otro modificó mientras estaba abierto. */
 export const FILE_CHANGED_ERROR = 'El fichero ha cambiado en el servidor desde que lo abriste'

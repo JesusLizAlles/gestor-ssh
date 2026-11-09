@@ -231,4 +231,16 @@ describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
     await body.locator('td.num', { hasText: String(sshd.port) }).first().waitFor({ timeout: 15_000 })
     await shot('14-seguridad-puertos')
   })
+
+  it('seguridad: ofrece la base de datos de países y, al descargarla, enseña el país', async () => {
+    const body = page.locator('.tab-body:not(.hidden)')
+    await body.locator('.subtab', { hasText: 'Resumen' }).click()
+    await body.locator('.geo-notice').waitFor()
+    // La descarga real (4 MB de db-ip.com) solo si se pide, para no depender de la red en CI.
+    if (!process.env.GEOIP_NETWORK) return
+    await body.locator('.geo-notice button', { hasText: 'Descargar' }).click()
+    await body.locator('.geo-attribution').waitFor({ timeout: 60_000 })
+    await expect.poll(() => body.locator('.geo-notice').count()).toBe(0)
+    await shot('15-seguridad-paises')
+  })
 })

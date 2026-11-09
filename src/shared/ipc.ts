@@ -42,7 +42,10 @@ export const API_CHANNELS = [
   'openTerminal',
   'detectModules',
   'moduleCall',
-  'setSudoPassword'
+  'setSudoPassword',
+  'geoipStatus',
+  'geoipDownload',
+  'geoipLookup'
 ] as const satisfies readonly ApiChannel[]
 
 /** Respuesta envuelta: así el mensaje de error llega limpio al renderer. */

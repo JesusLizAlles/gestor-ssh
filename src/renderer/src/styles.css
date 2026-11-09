@@ -1277,7 +1277,7 @@ button.link:hover:not(:disabled) {
 }
 .two-cols {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(540px, 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -1299,4 +1299,38 @@ button.link:hover:not(:disabled) {
 }
 .jail-card .service-head {
   margin-bottom: 8px;
+}
+
+/* Países */
+.country {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-family: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  font-size: 12px;
+}
+.flag {
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  font-size: 14px;
+  line-height: 1;
+}
+.geo-notice {
+  background: rgba(53, 116, 240, 0.12);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.geo-notice button {
+  flex: none;
+}
+.geo-attribution {
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.geo-attribution .link {
+  font-size: 11px;
 }

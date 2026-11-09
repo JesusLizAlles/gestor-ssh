@@ -20,6 +20,8 @@ import { useModuleCall } from '../../lib/sudo'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { Icon } from '../Icon'
 import { SubTabs } from './common'
+import { Country, countryName, flag, useCountries, useGeo } from '../../lib/geo'
+import { formatSize } from '@shared/format'
 
 interface Props {
   server: ServerSummary
@@ -175,6 +177,7 @@ export function SecurityView({ server }: Props) {
           </div>
         )}
         {banMessage && <div className={`notice ${banMessage.kind}`}>{banMessage.text}</div>}
+        <GeoBanner />
         {tab === 'summary' && <SummaryTab key={`${sudo}-${refreshKey}`} call={call} sudo={sudo} fail2ban={fail2ban.data} banButton={banButton} />}
         {tab === 'connections' && <ConnectionsTab key={`${sudo}-${refreshKey}`} call={call} sudo={sudo} />}
         {tab === 'ports' && <PortsTab key={`${sudo}-${refreshKey}`} call={call} sudo={sudo} />}
@@ -184,6 +187,7 @@ export function SecurityView({ server }: Props) {
           <Fail2banTab data={fail2ban.data} error={fail2ban.error} loading={fail2ban.loading} onUnban={(ip, jail) => setBan({ ip, jail, ban: false })} onBan={(ip, jail) => setBan({ ip, jail, ban: true })} />
         )}
         {tab === 'firewall' && <FirewallTab key={refreshKey} call={call} />}
+        <GeoAttribution />
       </div>
       {ban && (
         <ConfirmDialog
@@ -266,6 +270,7 @@ function SummaryTab({
         <div>
           <div className="section-label">Más intentos fallidos (24 h)</div>
           <FailuresTable failures={failures.slice(0, 10)} banButton={banButton} empty={ssh.loading ? 'Cargando…' : 'Ningún intento fallido.'} />
+          <FailuresByCountry failures={failures} />
         </div>
         <div>
           <div className="section-label">IPs conectadas ahora</div>
@@ -275,6 +280,7 @@ function SummaryTab({
                 <tr>
                   <th>IP</th>
                   <th>Origen</th>
+                  <th>País</th>
                   <th className="num">Conexiones</th>
                   <th>Puertos locales</th>
                 </tr>
@@ -287,6 +293,9 @@ function SummaryTab({
                       {p.ip === connections.data?.clientIp && <span className="badge" style={{ marginLeft: 6 }}>tú</span>}
                     </td>
                     <td className="note">{ipKind(p.ip)}</td>
+                    <td>
+                      <Country ip={p.ip} />
+                    </td>
                     <td className="num">{p.count}</td>
                     <td className="mono">{portList(p.localPorts)}</td>
                   </tr>
@@ -309,6 +318,7 @@ function FailuresTable({ failures, banButton, empty }: { failures: FailureSummar
       <thead>
         <tr>
           <th>IP</th>
+          <th>País</th>
           <th className="num">Intentos</th>
           <th>Usuarios probados</th>
           <th>Último</th>
@@ -320,6 +330,9 @@ function FailuresTable({ failures, banButton, empty }: { failures: FailureSummar
           <tr key={f.ip}>
             <td className="mono" title={ipKind(f.ip)}>
               {f.ip}
+            </td>
+            <td>
+              <Country ip={f.ip} />
             </td>
             <td className="num">{f.attempts}</td>
             <td title={f.users.join(', ')}>
@@ -384,6 +397,7 @@ function ConnectionsTab({ call, sudo }: { call: Call; sudo: boolean }) {
               <tr>
                 <th>IP remota</th>
                 <th>Origen</th>
+                <th>País</th>
                 <th className="num">Conexiones</th>
                 <th>Puertos locales</th>
                 <th>Procesos</th>
@@ -397,6 +411,9 @@ function ConnectionsTab({ call, sudo }: { call: Call; sudo: boolean }) {
                     {p.ip === data?.clientIp && <span className="badge" style={{ marginLeft: 6 }}>tú</span>}
                   </td>
                   <td className="note">{ipKind(p.ip)}</td>
+                  <td>
+                    <Country ip={p.ip} />
+                  </td>
                   <td className="num">{p.count}</td>
                   <td className="mono">{portList(p.localPorts)}</td>
                   <td>{[...p.processes].join(', ') || <span className="note">{sudo ? '—' : 'requiere sudo'}</span>}</td>
@@ -415,6 +432,7 @@ function ConnectionsTab({ call, sudo }: { call: Call; sudo: boolean }) {
               <th>Estado</th>
               <th>Local</th>
               <th>Remoto</th>
+              <th>País</th>
               <th>Proceso</th>
             </tr>
           </thead>
@@ -428,6 +446,9 @@ function ConnectionsTab({ call, sudo }: { call: Call; sudo: boolean }) {
                 </td>
                 <td className="mono">
                   {s.peerAddress}:{s.peerPort}
+                </td>
+                <td>
+                  <Country ip={s.peerAddress} />
                 </td>
                 <td>{s.process ? `${s.process} (${s.pid})` : ''}</td>
               </tr>
@@ -523,6 +544,7 @@ function SshTab({ call, sudo, banButton }: { call: Call; sudo: boolean; banButto
       {error && <div className="notice error">{error}</div>}
       <div className="section-label">Intentos fallidos por IP ({failures.reduce((s, f) => s + f.attempts, 0)})</div>
       <FailuresTable failures={failures} banButton={banButton} empty={loading ? 'Cargando…' : 'Ningún intento fallido en este periodo.'} />
+      <FailuresByCountry failures={failures} />
       <div className="section-label" style={{ marginTop: 16 }}>
         Accesos correctos ({accepted.length})
       </div>
@@ -533,6 +555,7 @@ function SshTab({ call, sudo, banButton }: { call: Call; sudo: boolean; banButto
               <th>Fecha</th>
               <th>Usuario</th>
               <th>IP</th>
+              <th>País</th>
               <th>Método</th>
             </tr>
           </thead>
@@ -543,6 +566,9 @@ function SshTab({ call, sudo, banButton }: { call: Call; sudo: boolean; banButto
                 <td>{e.user}</td>
                 <td className="mono" title={ipKind(e.ip)}>
                   {e.ip}
+                </td>
+                <td>
+                  <Country ip={e.ip} />
                 </td>
                 <td>{e.method}</td>
               </tr>
@@ -587,7 +613,9 @@ function SessionsTab({ call }: { call: Call }) {
                 <td>{w.user}</td>
                 <td className="mono">{w.tty}</td>
                 <td className="note">{w.since}</td>
-                <td className="mono">{w.from}</td>
+                <td className="mono">
+                  {w.from} <Country ip={w.from} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -645,6 +673,9 @@ function Fail2banTab({
                   <tr key={ip}>
                     <td className="mono">{ip}</td>
                     <td className="note">{ipKind(ip)}</td>
+                    <td>
+                      <Country ip={ip} />
+                    </td>
                     <td className="row-action">
                       <button onClick={() => onUnban(ip, jail.name)}>Desbloquear</button>
                     </td>
@@ -707,5 +738,108 @@ function FirewallTab({ call }: { call: Call }) {
         {result ? result.text || '(sin reglas)' : loading ? 'Cargando…' : ''}
       </pre>
     </>
+  )
+}
+
+/** Intentos fallidos sumados por país (solo si hay base de datos de países). */
+function FailuresByCountry({ failures }: { failures: FailureSummary[] }) {
+  const { status } = useGeo()
+  const countries = useCountries(failures.map((f) => f.ip))
+  if (!status?.available || !failures.length) return null
+  const byCountry = new Map<string, { attempts: number; ips: number }>()
+  for (const f of failures) {
+    const code = countries.get(f.ip) ?? '??'
+    const entry = byCountry.get(code) ?? { attempts: 0, ips: 0 }
+    entry.attempts += f.attempts
+    entry.ips++
+    byCountry.set(code, entry)
+  }
+  const rows = [...byCountry.entries()].sort((a, b) => b[1].attempts - a[1].attempts).slice(0, 10)
+  return (
+    <>
+      <div className="section-label" style={{ marginTop: 14 }}>
+        Intentos fallidos por país
+      </div>
+      <table className="result-table">
+        <thead>
+          <tr>
+            <th>País</th>
+            <th className="num">IPs</th>
+            <th className="num">Intentos</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([code, entry]) => (
+            <tr key={code}>
+              <td>
+                {code === '??' ? (
+                  <span className="note">Desconocido</span>
+                ) : (
+                  <span className="country">
+                    {flag(code) && <span className="flag">{flag(code)}</span>}
+                    {countryName(code)}
+                  </span>
+                )}
+              </td>
+              <td className="num">{entry.ips}</td>
+              <td className="num">{entry.attempts}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  )
+}
+
+/** Aviso para descargar o actualizar la base de datos de países. */
+function GeoBanner() {
+  const { status, downloading, error, download } = useGeo()
+  if (!status) return null
+  if (error)
+    return (
+      <div className="notice error">
+        No se pudo descargar la base de datos de países: {error}{' '}
+        <button className="link" disabled={downloading} onClick={() => void download()}>
+          Reintentar
+        </button>
+      </div>
+    )
+  if (!status.available)
+    return (
+      <div className="notice geo-notice">
+        Para ver el país de cada IP, descarga la base de datos gratuita de DB-IP (unos 4 MB). Se guarda en este equipo y las consultas son
+        locales: las IPs no se envían a ningún servicio.{' '}
+        <button className="primary" disabled={downloading} onClick={() => void download()}>
+          {downloading ? 'Descargando…' : 'Descargar'}
+        </button>
+      </div>
+    )
+  if (status.outdated)
+    return (
+      <div className="notice warn">
+        La base de datos de países es de {new Date(status.builtAt ?? 0).toLocaleDateString('es-ES')}; DB-IP publica una nueva cada mes.{' '}
+        <button className="link" disabled={downloading} onClick={() => void download()}>
+          {downloading ? 'Actualizando…' : 'Actualizar'}
+        </button>
+      </div>
+    )
+  return null
+}
+
+/** La licencia CC BY 4.0 de DB-IP pide citarlos con un enlace. */
+function GeoAttribution() {
+  const { status, downloading, download } = useGeo()
+  if (!status?.available) return null
+  return (
+    <div className="geo-attribution note">
+      Países:{' '}
+      <button className="link" onClick={() => window.open('https://db-ip.com')}>
+        IP Geolocation by DB-IP
+      </button>{' '}
+      (CC BY 4.0) · versión del {new Date(status.builtAt ?? 0).toLocaleDateString('es-ES')} · {formatSize(status.sizeBytes)} ·{' '}
+      <button className="link" disabled={downloading} onClick={() => void download()}>
+        {downloading ? 'actualizando…' : 'actualizar'}
+      </button>
+    </div>
   )
 }
