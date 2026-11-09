@@ -1,7 +1,7 @@
 import type { ServerApi } from './types'
 
 /** Un canal IPC por método de la API; el nombre del canal es el del método. Los eventos van aparte. */
-export type ApiChannel = Exclude<keyof ServerApi, 'onHostKey' | 'onTransfer' | 'onSession' | 'onUpdateState' | 'onMcpStatus' | 'onMcpActivity'>
+export type ApiChannel = Exclude<keyof ServerApi, 'onHostKey' | 'onTransfer' | 'onSession' | 'onUpdateState' | 'onMcpStatus' | 'onMcpActivity' | 'onMcpApproval'>
 
 /** Cada cambio de estado del actualizador. */
 export const UPDATE_STATE_EVENT = 'updater:state'
@@ -14,6 +14,8 @@ export const SESSION_EVENT = 'ssh:session'
 /** Cambios de estado del servidor MCP y cada llamada de Claude. */
 export const MCP_STATUS_EVENT = 'mcp:status'
 export const MCP_ACTIVITY_EVENT = 'mcp:activity'
+/** El agente pide permiso para ejecutar algo. */
+export const MCP_APPROVAL_EVENT = 'mcp:approval'
 /** El principal entrega el MessagePort de un terminal recién abierto. */
 export const TERMINAL_PORT_EVENT = 'terminal:port'
 /** Mensaje con el que el preload pasa ese puerto a la página (window.postMessage). */
@@ -59,7 +61,11 @@ export const API_CHANNELS = [
   'mcpSetEnabled',
   'mcpSetPort',
   'mcpRegenerateToken',
-  'mcpActivity'
+  'mcpActivity',
+  'mcpSetAccess',
+  'mcpRespondApproval',
+  'mcpCreateExtension',
+  'mcpOpenExtension'
 ] as const satisfies readonly ApiChannel[]
 
 /** Respuesta envuelta: así el mensaje de error llega limpio al renderer. */

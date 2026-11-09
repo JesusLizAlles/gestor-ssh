@@ -4,6 +4,8 @@
 import { execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ServerConfig } from '@shared/types'
@@ -242,5 +244,37 @@ describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
     await body.locator('.geo-attribution').waitFor({ timeout: 60_000 })
     await expect.poll(() => body.locator('.geo-notice').count()).toBe(0)
     await shot('15-seguridad-paises')
+  })
+
+  it('Claude MCP: acceso por servidor, comando con aprobación y extensión', async () => {
+    await page.locator('.status-btn', { hasText: 'Claude MCP' }).click()
+    const dialog = page.locator('.dialog', { hasText: 'Servidor MCP para Claude' })
+    const port = String(48000 + Math.floor(Math.random() * 1000))
+    await dialog.locator('input.port').fill(port)
+    await dialog.getByRole('button', { name: 'Aplicar' }).click()
+    await dialog.getByText('Desactivado').click()
+    await dialog.getByText('Activado', { exact: true }).waitFor()
+    await dialog.locator('select').selectOption('confirm')
+    await shot('16-mcp-ajustes')
+    const token = JSON.parse(await readFile(join(await app.evaluate(({ app }) => app.getPath('userData')), 'mcp.json'), 'utf8')).token
+    await dialog.getByRole('button', { name: 'Cerrar' }).click()
+
+    const client = new Client({ name: 'e2e', version: '1' })
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } })
+    )
+    const call = client.callTool({ name: 'run_command', arguments: { server: 'Servidor de pruebas', command: 'echo hola-desde-claude' } })
+    const approval = page.locator('.dialog', { hasText: 'Claude quiere actuar en un servidor' })
+    await approval.getByText('echo hola-desde-claude').waitFor()
+    await shot('17-mcp-aprobacion')
+    await approval.getByRole('button', { name: 'Ejecutar' }).click()
+    const result = JSON.parse((((await call).content as { text: string }[])[0]!).text)
+    expect(result).toMatchObject({ exitCode: 0, stdout: 'hola-desde-claude\n' })
+    await client.close()
+
+    await page.locator('.status-btn', { hasText: 'Claude MCP' }).click()
+    await dialog.locator('.mono', { hasText: 'echo hola-desde-claude' }).waitFor()
+    await shot('18-mcp-actividad')
+    await dialog.getByRole('button', { name: 'Cerrar' }).click()
   })
 })

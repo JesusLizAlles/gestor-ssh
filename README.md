@@ -100,12 +100,33 @@ instaladores y los `latest*.yml` en una Release en borrador; al publicarla, las 
 
 ## Claude (servidor MCP)
 
-La app incluye un servidor MCP local para que Claude analice la seguridad y el estado de los servidores **que tengas conectados**. Se activa desde el botón «Claude MCP» de la barra de estado (viene desactivado).
+La app incluye un servidor MCP local para que Claude analice y, si lo permites, administre tus servidores. Se configura
+desde el botón «Claude MCP» de la barra de estado (viene desactivado).
 
-- Herramientas de **solo lectura**: `list_servers`, `ssh_access_report` (fallos por IP con país, accesos correctos), `network_connections`, `active_sessions`, `fail2ban_status`, `firewall_status`, `services_list`, `service_logs` y `geoip_lookup`.
-- Escucha solo en `127.0.0.1` (puerto 47821 por defecto) y exige un token Bearer aleatorio (guardado en `mcp.json`, con permisos 0600). Rechaza peticiones de navegador (con `Origin`) y cabeceras `Host` que no sean de loopback.
-- La contraseña de sudo nunca llega a Claude: si hace falta, se introduce en la app.
-- El diálogo muestra el comando para Claude Code (`claude mcp add --transport http …`), la configuración para Claude Desktop (vía `mcp-remote`) y el registro de las consultas.
+> **Cuidado.** Un agente puede equivocarse, y los registros que lee pueden contener instrucciones maliciosas (*prompt
+> injection*). Da el mínimo acceso necesario.
+
+**Acceso por servidor** (por defecto, ninguno):
+
+| Nivel | Qué puede hacer Claude |
+| --- | --- |
+| Sin acceso | No ve el servidor. |
+| Solo lectura | `ssh_access_report` (fallos por IP con país, accesos correctos), `network_connections`, `active_sessions`, `fail2ban_status`, `firewall_status`, `services_list`, `service_logs`. |
+| Ejecución con mi aprobación | Además `run_command`, `fail2ban_ban` y `service_action`: la app enseña el comando y no se ejecuta hasta pulsar «Ejecutar» (5 minutos para responder; si no, se rechaza). |
+| Ejecución sin preguntar | Igual, sin confirmación. En producción se rebaja siempre a «con mi aprobación». |
+
+- Si el servidor está conectado en la app, Claude usa esa conexión (y su contraseña de sudo, que nunca le llega). Si no,
+  abre una conexión propia con los datos guardados, que se cierra tras 10 minutos sin uso o al cambiar el acceso.
+- Escucha solo en `127.0.0.1` (puerto 47821 por defecto) con un token Bearer aleatorio (en `mcp.json`, 0600). Rechaza
+  peticiones de navegador (con `Origin`) y cabeceras `Host` que no sean de loopback.
+- Cada llamada aparece en «Actividad reciente», con el comando ejecutado.
+
+**Claude Desktop:** «Crear extensión (.mcpb)…» y luego «Instalar en Claude Desktop» (o arrastra el fichero a Ajustes →
+Extensiones). La extensión es un puente stdio ↔ HTTP (`src/mcp-bridge/bridge.cjs`) que lee puerto y token del
+`mcp.json` de la app, así que no hay que reinstalarla si cambian. Con la app cerrada, explica a Claude qué hacer.
+
+**Claude Code:** el diálogo da el comando, del estilo
+`claude mcp add --scope user --transport http gestor-ssh http://127.0.0.1:47821/mcp --header "Authorization: Bearer <token>"`.
 
 ## Arquitectura
 

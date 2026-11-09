@@ -2,12 +2,13 @@ import { appendFile, mkdir, stat, truncate, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, net, safeStorage, session as electronSession, shell } from 'electron'
 import electronUpdater from 'electron-updater'
-import { HOST_KEY_EVENT, MCP_ACTIVITY_EVENT, MCP_STATUS_EVENT, SESSION_EVENT, TRANSFER_EVENT, UPDATE_STATE_EVENT } from '@shared/ipc'
+import { HOST_KEY_EVENT, MCP_ACTIVITY_EVENT, MCP_APPROVAL_EVENT, MCP_STATUS_EVENT, SESSION_EVENT, TRANSFER_EVENT, UPDATE_STATE_EVENT } from '@shared/ipc'
 import { GeoIp } from './geoip'
 import { HostKeyPrompter } from './host-prompt'
 import { registerIpc } from './ipc'
 import { McpController } from './mcp/server'
 import { runModuleCall } from './modules'
+import { runScript } from './ssh/commands'
 import { SessionManager } from './ssh/sessions'
 import { KnownHosts } from './store/known-hosts'
 import { SecretVault, type SecretCipher } from './store/secrets'
@@ -181,19 +182,26 @@ app.whenReady().then(() => {
   const mcp = new McpController({
     dataDir,
     version: app.getVersion(),
-    tools: {
-      listServers: () => store.list(),
-      isConnected: (id) => sessions.isConnected(id),
-      session: (id) => sessions.get(id),
-      call: (session, call, args) => runModuleCall(session, call, args) as never,
-      geoLookup: (ips) => geoip.lookup(ips)
+    servers: () => store.list(),
+    appSessions: sessions,
+    openSession: async (config) => sessions.openTemporary(config, await vault.get(config.id)),
+    call: (session, call, args) => runModuleCall(session, call, args) as never,
+    exec: async (session, command, opts) => {
+      const r = await runScript(session, command, { ...opts, maxBytes: 1024 * 1024 })
+      return { code: r.code, stdout: r.stdout.toString('utf8'), stderr: r.stderr, truncated: r.truncated }
     },
+    geoLookup: (ips) => geoip.lookup(ips),
     onStatus: (status) => send(MCP_STATUS_EVENT, status),
-    onActivity: (entry) => send(MCP_ACTIVITY_EVENT, entry)
+    onActivity: (entry) => send(MCP_ACTIVITY_EVENT, entry),
+    onApproval: (request) => {
+      if (mainWindow?.isMinimized()) mainWindow.restore()
+      mainWindow?.focus()
+      return send(MCP_APPROVAL_EVENT, request)
+    }
   })
   void mcp.init().catch((err) => console.error('MCP:', err))
 
-  registerIpc({ store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, updater, mcp, window: () => mainWindow })
+  registerIpc({ store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, updater, mcp, dataDir, iconPath: icon, window: () => mainWindow })
 
   const openWindow = () => {
     mainWindow = createWindow()
@@ -215,7 +223,7 @@ app.whenReady().then(() => {
   })
   app.on('before-quit', () => {
     sessions.closeAll()
-    void mcp.stop()
+    void mcp.shutdown()
   })
 })
 

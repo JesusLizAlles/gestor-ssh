@@ -1,4 +1,4 @@
-import type { McpActivity, McpStatus } from './mcp'
+import type { McpAccess, McpActivity, McpApprovalRequest, McpStatus } from './mcp'
 import type { ModuleCall, ModuleCalls, ModuleId } from './modules'
 
 export type Environment = 'dev' | 'test' | 'prod'
@@ -196,6 +196,13 @@ export interface ServerApi {
   mcpSetPort(port: number): Promise<McpStatus>
   mcpRegenerateToken(): Promise<McpStatus>
   mcpActivity(): Promise<McpActivity[]>
+  mcpSetAccess(serverId: string, level: McpAccess): Promise<McpStatus>
+  mcpRespondApproval(requestId: string, approved: boolean): Promise<void>
+  /** Guarda la extensión .mcpb para Claude Desktop; devuelve la ruta (null si se cancela). */
+  mcpCreateExtension(): Promise<string | null>
+  /** Abre la última extensión creada (Claude Desktop la instala). */
+  mcpOpenExtension(): Promise<void>
+  onMcpApproval(listener: (request: McpApprovalRequest) => void): () => void
   onMcpStatus(listener: (status: McpStatus) => void): () => void
   onMcpActivity(listener: (entry: McpActivity) => void): () => void
 }

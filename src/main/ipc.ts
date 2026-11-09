@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { access } from 'node:fs/promises'
+import { access, readFile, writeFile } from 'node:fs/promises'
 import { basename as localBasename, extname, join as localJoin } from 'node:path'
 import { app, dialog, ipcMain, MessageChannelMain, shell, type BrowserWindow, type WebContents } from 'electron'
 import { channelName, TERMINAL_PORT_EVENT, type ApiChannel, type IpcEnvelope } from '@shared/ipc'
@@ -17,7 +17,10 @@ import {
 import { z, ZodError } from 'zod'
 import type { GeoIp } from './geoip'
 import type { HostKeyPrompter } from './host-prompt'
+import { buildMcpb, listTools } from './mcp/bundle'
 import type { McpController } from './mcp/server'
+import bridgeSource from '../mcp-bridge/bridge.cjs?raw'
+import { MCP_ACCESS_LEVELS } from '@shared/mcp'
 import { detectModules, isModuleCall, runModuleCall } from './modules'
 import { setSudoPassword } from './ssh/commands'
 import { sudoReadText, sudoWriteText } from './sudo-files'
@@ -51,6 +54,8 @@ export interface IpcDeps {
   geoip: GeoIp
   updater: Updater
   mcp: McpController
+  dataDir: string
+  iconPath: string
   window: () => BrowserWindow | null
 }
 
@@ -89,6 +94,8 @@ async function uniqueLocalPath(dir: string, name: string): Promise<string> {
 
 export function registerIpc(deps: IpcDeps): void {
   const { store, vault, knownHosts, sessions, transfers, hostPrompt, geoip, updater, mcp, window } = deps
+  // Última extensión de Claude Desktop guardada: mcpOpenExtension la abre sin recibir rutas del renderer.
+  let lastExtension: string | null = null
   // Ficheros elegidos para subir: startUpload los usa por token, sin recibir rutas locales del renderer.
   const pendingUploads = new Map<string, { serverId: string; remoteDir: string; localPaths: string[]; conflicts: Set<string> }>()
 
@@ -103,6 +110,7 @@ export function registerIpc(deps: IpcDeps): void {
     saveServer: async (_sender, raw) => {
       const input = saveServerSchema.parse(raw)
       const saved = await store.save(input)
+      mcp.serverChanged(saved.id)
       return saved
     },
     deleteServer: async (_sender, id) => {
@@ -110,6 +118,7 @@ export function registerIpc(deps: IpcDeps): void {
       transfers.cancelServer(serverId)
       sessions.disconnect(serverId)
       await store.delete(serverId)
+      await mcp.forgetServer(serverId)
     },
     pickPrivateKey: async () => {
       const options: Electron.OpenDialogOptions = {
@@ -321,7 +330,34 @@ export function registerIpc(deps: IpcDeps): void {
     mcpSetEnabled: (_sender, enabled) => mcp.setEnabled(z.boolean().parse(enabled)),
     mcpSetPort: (_sender, port) => mcp.setPort(z.number().int().min(1024).max(65535).parse(port)),
     mcpRegenerateToken: () => mcp.regenerateToken(),
-    mcpActivity: async () => mcp.listActivity()
+    mcpActivity: async () => mcp.listActivity(),
+    mcpSetAccess: (_sender, id, level) => mcp.setAccess(idSchema.parse(id), z.enum(MCP_ACCESS_LEVELS).parse(level)),
+    mcpRespondApproval: async (_sender, id, approved) => mcp.respondApproval(uuidSchema.parse(id), z.boolean().parse(approved)),
+    mcpCreateExtension: async () => {
+      const win = window()
+      const options = {
+        title: 'Guardar extensión para Claude Desktop',
+        defaultPath: localJoin(app.getPath('downloads'), 'gestor-ssh.mcpb'),
+        filters: [{ name: 'Extensión de Claude Desktop', extensions: ['mcpb'] }]
+      }
+      const { canceled, filePath } = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+      if (canceled || !filePath) return null
+      const bundle = buildMcpb({
+        version: app.getVersion(),
+        dataDir: deps.dataDir,
+        bridgeSource,
+        tools: await listTools(mcp.createMcpServer()),
+        icon: await readFile(deps.iconPath).catch(() => null)
+      })
+      await writeFile(filePath, bundle)
+      lastExtension = filePath
+      return filePath
+    },
+    mcpOpenExtension: async () => {
+      if (!lastExtension) throw new Error('Primero crea la extensión')
+      const error = await shell.openPath(lastExtension)
+      if (error) throw new Error(`No se pudo abrir: ${error}. Arrástrala a Claude Desktop (Ajustes → Extensiones).`)
+    }
   }
 
   for (const [method, handler] of Object.entries(handlers) as [ApiChannel, Handlers[ApiChannel]][]) {
