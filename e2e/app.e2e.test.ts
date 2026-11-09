@@ -1,0 +1,161 @@
+// Prueba de humo de la app completa: Playwright controla Electron contra un sshd desechable.
+// Requiere `npm run build` (lo hace `npm run test:e2e`) y OpenSSH instalado (sshd y sftp-server).
+// E2E_SCREENSHOTS=/ruta guarda capturas de cada paso.
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { ServerConfig } from '@shared/types'
+import { tempDir } from '../tests/helpers'
+import { sshdAvailable, startSshd, type TestSshd } from '../tests/sshd'
+
+const shots = process.env.E2E_SCREENSHOTS
+
+describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
+  let sshd: TestSshd
+  let app: ElectronApplication
+  let page: Page
+  let www: string
+  let local: string
+
+  const shot = async (name: string) => {
+    if (!shots) return
+    await mkdir(shots, { recursive: true })
+    await page.screenshot({ path: join(shots, `${name}.png`) })
+  }
+  const row = (name: string) => page.locator('.tab-body:not(.hidden) .file-row', { hasText: new RegExp(`^${name.replace(/\./g, '\\.')}`) })
+
+  beforeAll(async () => {
+    sshd = await startSshd()
+    www = join(sshd.dir, 'www')
+    await mkdir(join(www, 'logs'), { recursive: true })
+    await writeFile(join(www, 'index.html'), '<h1>Hola</h1>\n')
+    await writeFile(join(www, 'config.ini'), '[app]\nentorno=pruebas\n')
+    await writeFile(join(www, 'deploy.sh'), '#!/bin/sh\necho desplegando\n', { mode: 0o755 })
+    await writeFile(join(www, 'logs', 'app.log'), 'arranque\n')
+
+    const userData = await tempDir('gestor-ssh-e2e-')
+    local = await tempDir('gestor-ssh-e2e-local-')
+    const server: ServerConfig = {
+      id: 'e2e',
+      name: 'Servidor de pruebas',
+      host: sshd.host,
+      port: sshd.port,
+      username: sshd.username,
+      authMethod: 'privateKey',
+      privateKeyPath: sshd.clientKeyPath,
+      environment: 'test',
+      initialPath: www
+    }
+    await writeFile(join(userData, 'servers.json'), JSON.stringify({ version: 1, servers: [server] }))
+
+    app = await electron.launch({ args: ['.', `--user-data-dir=${userData}`, '--password-store=basic'], env: { ...process.env } as Record<string, string> })
+    page = await app.firstWindow()
+    await page.setViewportSize({ width: 1280, height: 800 })
+  })
+
+  afterAll(async () => {
+    await app?.close()
+    await sshd?.stop()
+  })
+
+  it('muestra el servidor guardado', async () => {
+    await expect(page.locator('.server .name').textContent()).resolves.toBe('Servidor de pruebas')
+    await shot('01-inicio')
+  })
+
+  it('pide confiar en la huella y abre el explorador', async () => {
+    await page.locator('.server').dblclick()
+    await page.getByText('Servidor desconocido').waitFor()
+    await expect(page.locator('.fingerprint').textContent()).resolves.toMatch(/^SHA256:/)
+    await shot('02-huella')
+    await page.getByRole('button', { name: 'Confiar y conectar' }).click()
+    await row('index.html').waitFor()
+    const names = await page.locator('.tab-body:not(.hidden) .file-row .fname span').allTextContents()
+    expect(names).toEqual(['logs', 'config.ini', 'deploy.sh', 'index.html'])
+    await expect(row('deploy.sh').locator('.perm').textContent()).resolves.toBe('-rwxr-xr-x')
+    await expect.poll(() => page.locator('.state-dot.connected').count()).toBe(1)
+    await shot('03-explorador')
+  })
+
+  it('entra en carpetas y vuelve con las migas de pan', async () => {
+    await row('logs').dblclick()
+    await row('app.log').waitFor()
+    await page.locator('.crumb', { hasText: /^www$/ }).click()
+    await row('index.html').waitFor()
+  })
+
+  it('edita y guarda un fichero en el servidor', async () => {
+    await row('config.ini').dblclick()
+    const editor = page.locator('.tab-body:not(.hidden) .monaco-editor')
+    await editor.waitFor()
+    await page.locator('.tab-body:not(.hidden) .view-lines', { hasText: 'entorno=pruebas' }).waitFor()
+    await editor.click()
+    await page.keyboard.press('Control+End')
+    await page.keyboard.type('nuevo=1')
+    await expect.poll(() => page.locator('.tab.active .dirty').count()).toBe(1)
+    await page.keyboard.press('Control+S')
+    await page.locator('.editor-status.ok', { hasText: 'Guardado' }).waitFor()
+    expect(await readFile(join(www, 'config.ini'), 'utf8')).toBe('[app]\nentorno=pruebas\nnuevo=1')
+    await expect.poll(() => page.locator('.tab.active .dirty').count()).toBe(0)
+    await shot('04-editor')
+  })
+
+  it('abre un terminal en la carpeta del explorador', async () => {
+    await page.locator('.tab', { hasText: 'www' }).click()
+    await page.locator('.tab-body:not(.hidden) button[title="Abrir un terminal en esta carpeta"]').click()
+    const rows = page.locator('.tab-body:not(.hidden) .xterm-rows')
+    await rows.waitFor()
+    // El shell ya ejecutó el `cd` inicial: está listo para leer lo que se escriba.
+    await expect.poll(() => rows.textContent(), { timeout: 10_000 }).toContain(`cd -- '${www}'`)
+    await page.waitForTimeout(1000)
+    await page.locator('.tab-body:not(.hidden) .xterm').click()
+    await page.keyboard.type("printf '%s-%s\\n' e2e ok; pwd")
+    await page.keyboard.press('Enter')
+    await expect.poll(() => rows.textContent(), { timeout: 10_000 }).toContain('e2e-ok')
+    await expect.poll(() => rows.textContent(), { timeout: 10_000 }).toContain(www)
+    await shot('05-terminal')
+  })
+
+  it('descarga un fichero y sube otro', async () => {
+    await page.locator('.tab', { hasText: 'www' }).first().click()
+    const target = join(local, 'index-descargado.html')
+    // Los diálogos nativos se sustituyen en el proceso principal por respuestas fijas.
+    await app.evaluate(({ dialog }, path) => {
+      dialog.showSaveDialog = (async () => ({ canceled: false, filePath: path })) as typeof dialog.showSaveDialog
+    }, target)
+    await row('index.html').click()
+    await page.locator('.tab-body:not(.hidden) button[title="Descargar lo seleccionado"]').click()
+    await page.locator('.transfer .tstate.done').first().waitFor()
+    expect(await readFile(target, 'utf8')).toBe('<h1>Hola</h1>\n')
+
+    const toUpload = join(local, 'subido.txt')
+    await writeFile(toUpload, 'desde la app\n')
+    await app.evaluate(({ dialog }, path) => {
+      dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [path] })) as typeof dialog.showOpenDialog
+    }, toUpload)
+    await page.locator('.tab-body:not(.hidden) button[title="Subir ficheros a esta carpeta"]').click()
+    await row('subido.txt').waitFor()
+    expect(await readFile(join(www, 'subido.txt'), 'utf8')).toBe('desde la app\n')
+    await shot('06-transferencias')
+
+    // Subirlo otra vez pregunta antes de sobrescribir.
+    await page.locator('.tab-body:not(.hidden) button[title="Subir ficheros a esta carpeta"]').click()
+    await page.getByText('Ya existen en el servidor').waitFor()
+    await page.getByRole('button', { name: 'Cancelar' }).click()
+  })
+
+  it('crea, renombra y borra una carpeta', async () => {
+    await page.locator('.tab-body:not(.hidden) button[title="Nueva carpeta"]').click()
+    await page.locator('#prompt-value').fill('carpeta nueva')
+    await page.keyboard.press('Enter')
+    await row('carpeta nueva').waitFor()
+    await page.locator('.tab-body:not(.hidden) .files').press('F2')
+    await page.locator('#prompt-value').fill('renombrada')
+    await page.keyboard.press('Enter')
+    await row('renombrada').waitFor()
+    await page.locator('.tab-body:not(.hidden) .files').press('Delete')
+    await page.getByRole('button', { name: 'Eliminar' }).click()
+    await expect.poll(() => row('renombrada').count()).toBe(0)
+  })
+})

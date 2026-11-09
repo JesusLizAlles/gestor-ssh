@@ -1,0 +1,34 @@
+appId: com.sethotels.gestorssh
+productName: Gestor SSH
+# Nombres sin espacios, cómodos para descargar y enlazar desde las Releases.
+artifactName: gestor-ssh-${version}-${os}-${arch}.${ext}
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**
+  - package.json
+  # Icono de la ventana en Linux (el proceso principal lo carga desde ../../resources).
+  - resources/icon.png
+  - '!**/*.map'
+asarUnpack: []
+# Sin módulos nativos (ssh2 funciona en JS puro y el terminal es xterm.js): no se recompila nada.
+npmRebuild: false
+linux:
+  target: [AppImage]
+  category: Network
+  maintainer: Jesús Liz Alles
+win:
+  target: [nsis]
+nsis:
+  artifactName: gestor-ssh-${version}-setup.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target: [dmg]
+  category: public.app-category.developer-tools
+  # Sin certificado Developer ID: firma ad-hoc (sin ella Apple Silicon da la app por dañada).
+  # Gatekeeper pide autorizarla a mano la primera vez.
+  identity: '-'
+  hardenedRuntime: false
+  notarize: false

@@ -1,0 +1,57 @@
+{
+  "name": "gestor-ssh",
+  "productName": "Gestor SSH",
+  "version": "0.1.0",
+  "description": "Gestor visual de servidores por SSH: explorador de ficheros SFTP, transferencias y terminal",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "author": "Jesús Liz Alles",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dist:linux": "electron-vite build && electron-builder --linux AppImage",
+    "dist:win": "electron-vite build && electron-builder --win nsis",
+    "dist:mac": "electron-vite build && electron-builder --mac dmg --arm64 --x64",
+    "icons": "bash scripts/build-icons.sh",
+    "test:e2e": "electron-vite build && vitest run --config vitest.e2e.config.ts"
+  },
+  "dependencies": {
+    "ssh2": "^1.17.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tanstack/react-virtual": "^3.14.22",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ssh2": "^1.15.6",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "monaco-editor": "^0.57.0",
+    "playwright-core": "^1.65.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "5.9",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "cpu-features": false,
+    "ssh2": false,
+    "electron-winstaller": false
+  },
+  "overrides": {
+    "dompurify": "^3.4.17"
+  }
+}

@@ -1,0 +1,884 @@
+:root {
+  --bg: #1e1f22;
+  --bg-panel: #2b2d30;
+  --bg-raised: #393b40;
+  --bg-hover: #35373c;
+  --bg-select: #2e436e;
+  --border: #43454a;
+  --text: #dfe1e5;
+  --text-dim: #9da0a8;
+  --accent: #3574f0;
+  --accent-hover: #4682fa;
+  --ok: #5fb865;
+  --warn: #e0a84a;
+  --danger: #e5534b;
+  --env-dev: #5fb865;
+  --env-test: #e0a84a;
+  --env-prod: #e5534b;
+  --folder: #d8b45a;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  /* Altura común de botones, inputs y selects: alineados cuando van uno al lado del otro. */
+  --control-h: 28px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  height: var(--control-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+/* Los de icono van también dentro de filas pequeñas (lista, pestañas): sin altura fija. */
+button.icon {
+  height: auto;
+  background: none;
+  border: none;
+  padding: 3px 5px;
+  color: var(--text-dim);
+}
+button.icon:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+button.icon.on {
+  color: var(--accent-hover);
+}
+
+input,
+select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  height: var(--control-h);
+  padding: 0 8px;
+  width: 100%;
+  user-select: text;
+}
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  height: auto;
+}
+
+.svg-icon {
+  flex: none;
+}
+
+/* Disposición general */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w, 260px) 1fr;
+  grid-template-rows: 1fr auto 24px;
+  height: 100%;
+}
+.sidebar {
+  grid-row: 1 / 3;
+  position: relative;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+}
+.sidebar-resizer:hover,
+.col-resizing .sidebar-resizer {
+  background: var(--accent);
+}
+.col-resizing,
+.col-resizing * {
+  cursor: col-resize !important;
+}
+.app-main {
+  grid-row: 1;
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.statusbar {
+  grid-column: 1 / 3;
+  grid-row: 3;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.statusbar .spacer {
+  flex: 1;
+}
+.statusbar button.status-btn {
+  height: 20px;
+  font-size: 12px;
+  padding: 0 8px;
+  background: none;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+.statusbar button.status-btn:hover {
+  color: var(--text);
+}
+.statusbar .mono {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Lista de servidores */
+.sidebar-filter {
+  padding: 0 8px 6px;
+}
+.servers {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding-bottom: 6px;
+}
+/* Altura fija y acciones superpuestas: al pasar el ratón la fila no cambia de tamaño. */
+.server {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px 0 10px;
+  cursor: pointer;
+}
+.server:hover {
+  background: var(--bg-hover);
+}
+.server.selected {
+  background: var(--bg-select);
+}
+.server .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server .host {
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+.server .actions {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+  background: var(--bg-hover);
+  visibility: hidden;
+}
+.server.selected .actions {
+  background: var(--bg-select);
+}
+.server:hover .actions {
+  visibility: visible;
+}
+.server:hover .host {
+  visibility: hidden;
+}
+.state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  border: 1.5px solid var(--text-dim);
+}
+.state-dot.connected {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+.state-dot.error {
+  border-color: var(--danger);
+}
+.spinner {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border: 2px solid var(--text-dim);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  flex: none;
+}
+.badge.prod {
+  background: var(--env-prod);
+  color: #fff;
+}
+.badge.test {
+  background: rgba(224, 168, 74, 0.2);
+  color: var(--warn);
+}
+.empty-note {
+  padding: 10px;
+  color: var(--text-dim);
+}
+
+/* Pestañas */
+.tabs {
+  display: flex;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex: none;
+  scrollbar-width: thin;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 10px;
+  border-right: 1px solid var(--border);
+  border-top: 2px solid transparent;
+  cursor: pointer;
+  color: var(--text-dim);
+  white-space: nowrap;
+  max-width: 260px;
+}
+.tab .title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab.active {
+  background: var(--bg);
+  color: var(--text);
+  border-top-color: var(--accent);
+}
+.tab.prod {
+  border-top-color: rgba(229, 83, 75, 0.45);
+}
+.tab.prod.active {
+  border-top-color: var(--env-prod);
+}
+.tab .server-tag {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.tab .dirty {
+  color: var(--warn);
+}
+.tab button.icon {
+  padding: 0 3px;
+}
+.tab-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tab-body.hidden {
+  display: none;
+}
+
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-dim);
+  padding: 20px;
+  text-align: center;
+}
+.welcome h1 {
+  color: var(--text);
+  font-size: 20px;
+  margin: 0;
+}
+kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+/* Barra de herramientas */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex: none;
+  min-width: 0;
+}
+.toolbar .sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 4px;
+  background: var(--border);
+}
+.toolbar .spacer {
+  flex: 1;
+}
+.toolbar .filter {
+  width: 180px;
+  flex: none;
+}
+
+/* Ruta: migas de pan que se convierten en campo de texto al hacer clic */
+.pathbar {
+  flex: 1;
+  min-width: 120px;
+  height: var(--control-h);
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: text;
+}
+.pathbar input {
+  border: none;
+  height: 100%;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.crumb {
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.crumb:hover {
+  background: var(--bg-hover);
+}
+.crumb-sep {
+  color: var(--text-dim);
+}
+
+/* Lista de ficheros */
+.files {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.files:focus {
+  outline: none;
+}
+.files-head,
+.file-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 90px 140px 100px 90px;
+  align-items: center;
+  gap: 0 12px;
+  padding: 0 12px;
+}
+.files-head {
+  height: 26px;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.files-head > span {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.files-head > span:hover {
+  color: var(--text);
+}
+.files-head .num,
+.file-row .num {
+  text-align: right;
+}
+.files-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.file-row {
+  height: 26px;
+  cursor: default;
+  white-space: nowrap;
+}
+.file-row:hover {
+  background: var(--bg-hover);
+}
+.file-row.selected {
+  background: var(--bg-select);
+}
+.file-row .fname {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+}
+.file-row .fname span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-row .dim,
+.file-row.hidden-file .fname span {
+  color: var(--text-dim);
+}
+.file-row .meta {
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-row .perm {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.ficon-dir {
+  color: var(--folder);
+}
+.ficon-file {
+  color: var(--text-dim);
+}
+.ficon-link {
+  color: #7fb4f5;
+}
+.files-empty,
+.files-error {
+  padding: 16px;
+  color: var(--text-dim);
+}
+.files-error {
+  color: #ffb3ae;
+  user-select: text;
+}
+.files-loading {
+  position: absolute;
+  top: 34px;
+  right: 14px;
+}
+
+/* Terminal */
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0 0 6px;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+/* xterm pinta su propio fondo negro en el viewport: se iguala al de la app. */
+.terminal-host .xterm-viewport {
+  background-color: var(--bg) !important;
+}
+.terminal-host .xterm {
+  height: 100%;
+}
+.terminal-host .xterm-viewport {
+  scrollbar-width: thin;
+}
+.terminal-overlay {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  z-index: 5;
+  font-size: 12px;
+}
+
+/* Editor */
+.editor-host {
+  flex: 1;
+  min-height: 0;
+}
+.editor-status {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.editor-status.error {
+  color: #ffb3ae;
+}
+.editor-status.ok {
+  color: var(--ok);
+}
+.path-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Transferencias */
+.transfers {
+  grid-column: 2;
+  grid-row: 2;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  min-width: 0;
+}
+.transfers-list {
+  flex: 1;
+  overflow: auto;
+}
+.transfer {
+  display: grid;
+  grid-template-columns: 18px minmax(120px, 1fr) 220px 150px auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  border-bottom: 1px solid rgba(67, 69, 74, 0.5);
+}
+.transfer .tname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transfer .tsub {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transfer .tstate {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.transfer .tstate.error {
+  color: #ffb3ae;
+  white-space: normal;
+  user-select: text;
+}
+.transfer .tstate.done {
+  color: var(--ok);
+}
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.progress > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+.progress.done > div {
+  background: var(--ok);
+}
+.progress.error > div {
+  background: var(--danger);
+}
+.transfer-actions {
+  display: flex;
+  gap: 2px;
+}
+
+/* Menú contextual (clic derecho) */
+.context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 200px;
+  max-width: 360px;
+  padding: 4px 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+.context-menu-item {
+  padding: 5px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.context-menu-item:hover {
+  background: var(--bg-hover);
+}
+.context-menu-item.busy {
+  cursor: progress;
+}
+.context-menu-status {
+  padding: 5px 14px 3px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  color: var(--ok);
+}
+.context-menu-status.error {
+  color: var(--danger);
+  white-space: normal;
+}
+
+/* Diálogos */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.dialog {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.dialog.narrow {
+  width: 440px;
+}
+.dialog h2 {
+  margin: 0;
+  padding: 14px 16px 10px;
+  font-size: 15px;
+}
+.dialog .body {
+  padding: 0 16px 12px;
+  overflow: auto;
+}
+.dialog .footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.dialog .footer .spacer {
+  flex: 1;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+.form-grid label {
+  color: var(--text-dim);
+}
+.form-grid .full {
+  grid-column: 1 / 3;
+}
+.form-grid .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.form-grid .row .port {
+  width: 80px;
+  flex: none;
+}
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text) !important;
+  cursor: pointer;
+}
+.note {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.notice {
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  user-select: text;
+  word-break: break-word;
+}
+.notice.ok {
+  background: rgba(95, 184, 101, 0.12);
+  color: var(--ok);
+}
+.notice.error {
+  background: rgba(229, 83, 75, 0.12);
+  color: #ffb3ae;
+}
+.notice.warn {
+  background: rgba(224, 168, 74, 0.12);
+  color: var(--warn);
+}
+.notice code,
+.fingerprint {
+  font-family: var(--mono);
+  word-break: break-all;
+}
+.fingerprint {
+  display: block;
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 4px;
+  font-size: 12px;
+  user-select: text;
+}
+.name-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  max-height: 160px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  user-select: text;
+}
+.link {
+  display: inline;
+  height: auto;
+  background: none;
+  border: none;
+  color: var(--accent-hover);
+  padding: 0;
+  font-size: 12px;
+}
+button.link:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}
+.segmented {
+  display: flex;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px;
+}
+.segmented button {
+  flex: 1;
+  height: 22px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.segmented button.active {
+  background: var(--bg-raised);
+  color: var(--text);
+}

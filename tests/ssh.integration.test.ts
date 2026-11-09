@@ -1,0 +1,241 @@
+import { createHash, randomBytes } from 'node:crypto'
+import { mkdir, readFile, readdir, stat, symlink, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { ServerConfig, TerminalToRenderer, TransferInfo } from '@shared/types'
+import { SessionManager } from '../src/main/ssh/sessions'
+import { startTerminal, type TerminalChannel } from '../src/main/ssh/terminal'
+import { KnownHosts } from '../src/main/store/known-hosts'
+import { TransferManager } from '../src/main/transfers'
+import { tempDir } from './helpers'
+import { sshdAvailable, startSshd, type TestSshd } from './sshd'
+
+const sha = (data: Buffer) => createHash('sha256').update(data).digest('hex')
+
+describe.skipIf(!sshdAvailable)('contra un sshd real', () => {
+  let sshd: TestSshd
+  let config: ServerConfig
+  let knownHosts: KnownHosts
+  const asked: string[] = []
+  let sessions: SessionManager
+
+  beforeAll(async () => {
+    sshd = await startSshd()
+    config = {
+      id: 'srv',
+      name: 'Pruebas',
+      host: sshd.host,
+      port: sshd.port,
+      username: sshd.username,
+      authMethod: 'privateKey',
+      privateKeyPath: sshd.clientKeyPath,
+      environment: 'dev',
+      initialPath: ''
+    }
+    knownHosts = new KnownHosts(await tempDir())
+    sessions = new SessionManager({
+      knownHosts,
+      confirmHost: async (_host, _port, fp) => {
+        asked.push(fp)
+        return true
+      }
+    })
+  })
+
+  afterAll(async () => {
+    sessions?.closeAll()
+    await sshd?.stop()
+  })
+
+  describe('conexión y huellas', () => {
+    it('pregunta la huella la primera vez y luego la recuerda', async () => {
+      const first = await sessions.connect(config, {})
+      expect(first.fingerprint).toMatch(/^SHA256:/)
+      expect(first.home.startsWith('/')).toBe(true)
+      expect(asked).toEqual([first.fingerprint])
+      sessions.disconnect(config.id)
+      await sessions.connect(config, {})
+      expect(asked).toHaveLength(1)
+    })
+
+    it('no conecta si el usuario rechaza la huella', async () => {
+      const manager = new SessionManager({ knownHosts: new KnownHosts(await tempDir()), confirmHost: async () => false })
+      await expect(manager.connect({ ...config, id: 'otro' }, {})).rejects.toMatchObject({ code: 'HOST_KEY_REJECTED' })
+    })
+
+    it('bloquea la conexión si la huella cambió', async () => {
+      const hosts = new KnownHosts(await tempDir())
+      await hosts.remember(config.host, config.port, 'SHA256:otra-huella')
+      const manager = new SessionManager({ knownHosts: hosts, confirmHost: async () => true })
+      await expect(manager.connect({ ...config, id: 'otro' }, {})).rejects.toMatchObject({ code: 'HOST_KEY_CHANGED' })
+    })
+
+    it('clave con frase de paso: correcta y equivocada', async () => {
+      const keyed = { ...config, id: 'protegida', privateKeyPath: sshd.protectedKeyPath }
+      const manager = new SessionManager({ knownHosts, confirmHost: async () => true })
+      await expect(manager.connect(keyed, { passphrase: 'mal' })).rejects.toThrow(/frase de paso/)
+      await expect(manager.connect(keyed, { passphrase: 'secreto' })).resolves.toMatchObject({ fingerprint: expect.any(String) })
+      manager.closeAll()
+    })
+
+    it('errores claros: clave inexistente, puerto cerrado, usuario rechazado', async () => {
+      const manager = new SessionManager({ knownHosts, confirmHost: async () => true, timeoutMs: 5000 })
+      await expect(manager.connect({ ...config, id: 'a', privateKeyPath: '/no/existe' }, {})).rejects.toThrow(/No se puede leer la clave/)
+      await expect(manager.connect({ ...config, id: 'b', port: 1 }, {})).rejects.toThrow(/rechazó la conexión/)
+      await expect(manager.connect({ ...config, id: 'c', username: 'usuario-que-no-existe' }, {})).rejects.toThrow(/Autenticación rechazada/)
+    })
+
+    it('test() devuelve el sistema y cierra la conexión', async () => {
+      const result = await sessions.test({ ...config, id: 'prueba' }, {})
+      expect(result.system).toMatch(/Linux|Darwin/)
+      expect(sessions.isConnected('prueba')).toBe(false)
+    })
+  })
+
+  describe('SFTP', () => {
+    it('lista, crea, renombra, escribe, lee y borra', async () => {
+      await sessions.connect(config, {})
+      const sftp = await sessions.get(config.id).sftp()
+      const base = join(sshd.dir, 'sftp')
+      await mkdir(join(base, 'sub'), { recursive: true })
+      await writeFile(join(base, 'b10.txt'), 'diez')
+      await writeFile(join(base, 'b2.txt'), 'dos')
+      await symlink(join(base, 'sub'), join(base, 'enlace'))
+      await symlink(join(base, 'no-existe'), join(base, 'roto'))
+
+      const listing = await sftp.listDir(base + '/./')
+      expect(listing.path).toBe(base)
+      expect(listing.entries.map((e) => e.name)).toEqual(['enlace', 'sub', 'b2.txt', 'b10.txt', 'roto'])
+      const link = listing.entries.find((e) => e.name === 'enlace')!
+      expect(link).toMatchObject({ type: 'link', linkTarget: 'dir' })
+      expect(listing.entries.find((e) => e.name === 'roto')).toMatchObject({ type: 'link', linkTarget: undefined })
+      expect(listing.entries.find((e) => e.name === 'b2.txt')).toMatchObject({ type: 'file', size: 3, owner: sshd.username })
+
+      await sftp.mkdir(join(base, 'nueva'))
+      await sftp.createExclusive(join(base, 'nueva', 'vacío.txt'))
+      await expect(sftp.createExclusive(join(base, 'nueva', 'vacío.txt'))).rejects.toThrow()
+      await sftp.writeFile(join(base, 'nueva', 'vacío.txt'), Buffer.from('ñandú\n'))
+      expect((await sftp.readFile(join(base, 'nueva', 'vacío.txt'))).toString()).toBe('ñandú\n')
+      await sftp.rename(join(base, 'nueva'), join(base, 'renombrada'))
+      expect(await sftp.exists(join(base, 'renombrada', 'vacío.txt'))).toBe(true)
+      await expect(sftp.listDir(join(base, 'nada'))).rejects.toThrow(/No existe/)
+
+      // El borrado recursivo no sigue enlaces: lo enlazado sigue vivo.
+      await sftp.removeRecursive(join(base, 'enlace'))
+      expect(await sftp.exists(join(base, 'sub'))).toBe(true)
+      await sftp.removeRecursive(join(base, 'renombrada'))
+      expect(await sftp.exists(join(base, 'renombrada'))).toBe(false)
+    })
+  })
+
+  describe('transferencias', () => {
+    const run = async (manager: TransferManager, start: () => TransferInfo, updates: TransferInfo[]) => {
+      const info = start()
+      await manager.idle()
+      return updates.filter((u) => u.id === info.id).at(-1)!
+    }
+
+    it('descarga y sube carpetas completas con su contenido', async () => {
+      await sessions.connect(config, {})
+      const session = sessions.get(config.id)
+      const updates: TransferInfo[] = []
+      const manager = new TransferManager({ emit: (u) => updates.push(u) })
+      const remote = join(sshd.dir, 'origen')
+      const big = randomBytes(3 * 1024 * 1024 + 17)
+      await mkdir(join(remote, 'a', 'b'), { recursive: true })
+      await writeFile(join(remote, 'grande.bin'), big)
+      await writeFile(join(remote, 'a', 'b', 'hoja.txt'), 'hoja')
+      await writeFile(join(remote, 'script.sh'), '#!/bin/sh\n', { mode: 0o755 })
+      await symlink(join(remote, 'script.sh'), join(remote, 'enlace.sh'))
+      await symlink(remote, join(remote, 'bucle'))
+
+      const local = await tempDir()
+      const down = await run(manager, () => manager.download(session, remote, join(local, 'origen')), updates)
+      expect(down).toMatchObject({ state: 'done', totalFiles: 4, doneFiles: 4, error: null })
+      expect(down.totalBytes).toBe(down.doneBytes)
+      expect(sha(await readFile(join(local, 'origen', 'grande.bin')))).toBe(sha(big))
+      expect(await readFile(join(local, 'origen', 'a', 'b', 'hoja.txt'), 'utf8')).toBe('hoja')
+      expect(await readFile(join(local, 'origen', 'enlace.sh'), 'utf8')).toBe('#!/bin/sh\n')
+      expect((await readdir(join(local, 'origen'))).sort()).toEqual(['a', 'enlace.sh', 'grande.bin', 'script.sh'])
+
+      const target = join(sshd.dir, 'destino')
+      await mkdir(target)
+      const up = await run(manager, () => manager.upload(session, join(local, 'origen'), target), updates)
+      expect(up).toMatchObject({ state: 'done', totalFiles: 4, destination: target })
+      expect(sha(await readFile(join(target, 'origen', 'grande.bin')))).toBe(sha(big))
+      expect((await stat(join(target, 'origen', 'script.sh'))).mode & 0o777).toBe(0o755)
+
+      // Fichero suelto, a una ruta local con otro nombre.
+      const single = await run(manager, () => manager.download(session, join(remote, 'a', 'b', 'hoja.txt'), join(local, 'copia.txt')), updates)
+      expect(single.state).toBe('done')
+      expect(await readFile(join(local, 'copia.txt'), 'utf8')).toBe('hoja')
+    })
+
+    it('cancelar a medias borra el fichero incompleto', async () => {
+      const session = sessions.get(config.id)
+      const updates: TransferInfo[] = []
+      const manager = new TransferManager({ emit: (u) => updates.push(u) })
+      const remote = join(sshd.dir, 'enorme.bin')
+      await writeFile(remote, randomBytes(64 * 1024 * 1024))
+      const local = join(await tempDir(), 'enorme.bin')
+      const info = manager.download(session, remote, local)
+      while (!updates.some((u) => u.id === info.id && u.doneBytes > 0)) await new Promise((r) => setTimeout(r, 5))
+      manager.cancel(info.id)
+      await manager.idle()
+      expect(updates.at(-1)).toMatchObject({ id: info.id, state: 'cancelled' })
+      await expect(stat(local)).rejects.toThrow()
+    })
+
+    it('un error se informa con la ruta', async () => {
+      const session = sessions.get(config.id)
+      const updates: TransferInfo[] = []
+      const manager = new TransferManager({ emit: (u) => updates.push(u) })
+      const result = await run(manager, () => manager.download(session, join(sshd.dir, 'no-existe'), join(sshd.dir, 'x')), updates)
+      expect(result.state).toBe('error')
+      expect(result.error).toMatch(/No existe/)
+    })
+  })
+
+  describe('terminal', () => {
+    it('ejecuta lo que se escribe, cambia de tamaño y se cierra', async () => {
+      await sessions.connect(config, {})
+      const session = sessions.get(config.id)
+      let output = ''
+      const messages: TerminalToRenderer[] = []
+      let listener: (m: unknown) => void = () => {}
+      let closed = false
+      const channel: TerminalChannel = {
+        send: (m) => {
+          messages.push(m)
+          if (m.type !== 'data') return
+          const text = Buffer.from(m.data).toString()
+          output += text
+          // Algunos shells (fish) esperan la respuesta del terminal a «Primary DA» antes de arrancar.
+          if (/\x1b\[0?c/.test(text)) setImmediate(() => listener({ type: 'input', data: '\x1b[?62;22c' }))
+        },
+        onMessage: (l) => (listener = l),
+        onClose: () => {},
+        close: () => (closed = true)
+      }
+      await startTerminal(session, channel, 80, 24)
+      const waitFor = async (re: RegExp) => {
+        const start = Date.now()
+        while (!re.test(output)) {
+          if (Date.now() - start > 5000) throw new Error(`No apareció ${re} en: ${output}`)
+          await new Promise((r) => setTimeout(r, 20))
+        }
+      }
+      listener({ type: 'input', data: "printf '%s-%s\\n' resultado 42\r" })
+      await waitFor(/resultado-42/)
+      listener({ type: 'resize', cols: 132, rows: 40 })
+      listener({ type: 'input', data: 'stty size\r' })
+      await waitFor(/40 132/)
+      listener({ type: 'basura' })
+      listener({ type: 'input', data: 'exit\r' })
+      const start = Date.now()
+      while (!closed && Date.now() - start < 5000) await new Promise((r) => setTimeout(r, 20))
+      expect(closed).toBe(true)
+      expect(messages.at(-1)).toEqual({ type: 'exit', reason: 'Sesión terminada' })
+    })
+  })
+})

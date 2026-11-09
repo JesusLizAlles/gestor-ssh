@@ -1,0 +1,48 @@
+import type { ServerApi } from './types'
+
+/** Un canal IPC por método de la API; el nombre del canal es el del método. Los eventos van aparte. */
+export type ApiChannel = Exclude<keyof ServerApi, 'onHostKey' | 'onTransfer' | 'onSession'>
+
+/** El servidor presenta una huella que no conocemos: el usuario decide si fiarse. */
+export const HOST_KEY_EVENT = 'ssh:host-key'
+/** Cambios de estado y progreso de una transferencia. */
+export const TRANSFER_EVENT = 'transfer:update'
+/** Una conexión se cayó sola. */
+export const SESSION_EVENT = 'ssh:session'
+/** El principal entrega el MessagePort de un terminal recién abierto. */
+export const TERMINAL_PORT_EVENT = 'terminal:port'
+/** Mensaje con el que el preload pasa ese puerto a la página (window.postMessage). */
+export const TERMINAL_PORT_MESSAGE = 'gestor-ssh:terminal-port'
+
+export const API_CHANNELS = [
+  'secretStorageStatus',
+  'listServers',
+  'saveServer',
+  'deleteServer',
+  'pickPrivateKey',
+  'testServer',
+  'connect',
+  'disconnect',
+  'respondHostKey',
+  'forgetHostKey',
+  'listDir',
+  'makeDir',
+  'rename',
+  'remove',
+  'createFile',
+  'readTextFile',
+  'saveTextFile',
+  'download',
+  'planUpload',
+  'startUpload',
+  'cancelTransfer',
+  'clearTransfers',
+  'listTransfers',
+  'showInFolder',
+  'openTerminal'
+] as const satisfies readonly ApiChannel[]
+
+/** Respuesta envuelta: así el mensaje de error llega limpio al renderer. */
+export type IpcEnvelope<T> = { ok: true; value: T } | { ok: false; error: string }
+
+export const channelName = (method: ApiChannel): string => `api:${method}`
