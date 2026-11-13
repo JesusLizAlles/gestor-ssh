@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { MCP_ACCESS_LABEL, type McpAccess, type McpApprovalRequest } from '@shared/mcp'
 import type { ModuleCall, ModuleCalls, ServiceAction } from '@shared/modules'
 import { SUDO_PASSWORD_REQUIRED } from '@shared/modules'
+import { downsample, pointFromSamples, summarize, type PerfMetric, type PerfPoint } from '@shared/performance'
 import { isJailName, isListening, isLoopback, isPrivate, summarizeFailures, type SocketEntry } from '@shared/security'
 import type { ServerConfig } from '@shared/types'
 import type { ServerSession } from '../ssh/sessions'
@@ -46,6 +47,8 @@ const sudoArg = z
   .describe('Usar sudo para ver todo (la contraseña la pone el usuario en la app; nunca se envía a Claude)')
 
 const MAX_OUTPUT = 100_000
+/** Separación entre las dos lecturas de /proc con las que se calculan las tasas de ahora mismo. */
+const PERF_SAMPLE_GAP_MS = 2000
 
 const json = (value: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] })
 
@@ -299,6 +302,75 @@ export function registerTools(mcp: McpServer, deps: ToolDeps): void {
     async ({ server, unit, lines, sudo }) => {
       const { config, session } = await resolve(server, 'read')
       return { server: config.name, value: { server: config.name, unit, ...(await deps.call(session, 'services.logs', { unit, lines, sudo })) } }
+    }
+  )
+
+  tool(
+    'server_performance',
+    'Rendimiento del servidor. «current»: CPU, carga, memoria, swap, red y E/S de disco de ahora mismo (dos lecturas de /proc separadas 2 s) y espacio en disco. «history» (solo si el servidor tiene sysstat): media, máximo y cuándo fue de cada métrica en el periodo, y una serie reducida para ver tendencias y picos. Red y disco en bytes por segundo; horas en UTC (ISO 8601).',
+    {
+      server: serverArg,
+      hours: z.union([z.literal(6), z.literal(24), z.literal(168), z.literal(720)]).default(24).describe('Periodo del histórico: 6, 24 (día), 168 (semana) o 720 (mes)'),
+      points: z.number().int().min(6).max(300).default(48).describe('Puntos de la serie reducida del histórico')
+    },
+    READ_ONLY,
+    async ({ server, hours, points }) => {
+      const { config, session } = await resolve(server, 'read')
+      const first = await deps.call(session, 'performance.sample', { disks: true })
+      await new Promise((r) => setTimeout(r, PERF_SAMPLE_GAP_MS))
+      const second = await deps.call(session, 'performance.sample', { disks: false })
+      const now = pointFromSamples(first, second)
+      const history = await deps.call(session, 'performance.history', { hours })
+      const iso = (t: number | null) => (t === null ? null : new Date(t).toISOString())
+      const metrics: PerfMetric[] = ['cpu', 'iowait', 'load1', 'load5', 'load15', 'mem', 'swap', 'netRx', 'netTx', 'diskRead', 'diskWrite']
+      const memUsed = second.memTotal - second.memAvailable
+      return {
+        server: config.name,
+        value: {
+          server: config.name,
+          current: {
+            cpuPercent: now.cpu,
+            iowaitPercent: now.iowait,
+            cpus: second.cpus,
+            load: second.load,
+            memory: { totalBytes: second.memTotal, usedBytes: memUsed, percent: now.mem },
+            swap: { totalBytes: second.swapTotal, usedBytes: second.swapTotal - second.swapFree, percent: now.swap },
+            network: { rxBytesPerSec: now.netRx, txBytesPerSec: now.netTx },
+            disk: { readBytesPerSec: now.diskRead, writeBytesPerSec: now.diskWrite },
+            uptimeSeconds: Math.round(second.uptime),
+            filesystems: (first.disks ?? []).map((d) => ({
+              mount: d.mount,
+              type: d.type,
+              sizeBytes: d.size,
+              usedBytes: d.used,
+              availableBytes: d.available,
+              percent: d.used + d.available > 0 ? Math.round((d.used / (d.used + d.available)) * 1000) / 10 : null
+            }))
+          },
+          history:
+            history.status === 'ok'
+              ? {
+                  periodHours: hours,
+                  intervalSeconds: history.interval,
+                  samples: history.points.length,
+                  summary: Object.fromEntries(
+                    metrics.map((m) => {
+                      const s = summarize(history.points, m)
+                      return [m, { avg: s.avg, max: s.max, maxAt: iso(s.maxAt) }]
+                    })
+                  ),
+                  series: downsample(history.points, points).map((p: PerfPoint) => ({ ...p, t: iso(p.t) }))
+                }
+              : {
+                  status: history.status,
+                  collecting: history.collecting,
+                  note:
+                    history.status === 'missing'
+                      ? 'El servidor no tiene sysstat, así que no hay histórico. El usuario puede instalarlo desde Gestor SSH → Rendimiento.'
+                      : 'sysstat está instalado pero no tiene datos del periodo (¿recogida desactivada o recién activada?).'
+                }
+        }
+      }
     }
   )
 

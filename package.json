@@ -1,7 +1,7 @@
 {
   "name": "gestor-ssh",
   "productName": "Gestor SSH",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Gestor visual de servidores por SSH: explorador de ficheros SFTP, transferencias y terminal",
   "private": true,
   "type": "module",

@@ -16,6 +16,7 @@ import {
   type ServiceDetail
 } from '@shared/modules'
 import { shellQuote } from '@shared/shell'
+import { performanceHandlers, performanceSchemas } from './performance'
 import { securityHandlers, securitySchemas } from './security'
 import { outputText, runScript } from './ssh/commands'
 import type { ServerSession } from './ssh/sessions'
@@ -44,7 +45,8 @@ const schemas: { [K in ModuleCall]: z.ZodType<ModuleCalls[K]['args']> } = {
   'mysql.overview': empty,
   'mysql.query': z.object({ query: z.enum(['databases', 'status', 'processlist']), sudo: z.boolean() }),
   'mysql.kill': z.object({ id: z.number().int().positive(), sudo: z.boolean() }),
-  ...securitySchemas
+  ...securitySchemas,
+  ...performanceSchemas
 }
 
 const text = (buffer: Buffer) => buffer.toString('utf8')
@@ -208,7 +210,8 @@ const handlers: Handlers = {
   'mysql.kill': async (session, { id, sudo }) => {
     await mysql(session, `KILL ${id}`, sudo)
   },
-  ...securityHandlers
+  ...securityHandlers,
+  ...performanceHandlers
 }
 
 export function isModuleCall(call: unknown): call is ModuleCall {
@@ -222,6 +225,7 @@ export async function runModuleCall(session: ServerSession, call: ModuleCall, ra
 }
 
 const DETECT = `
+[ -r /proc/stat ] && echo performance
 command -v systemctl >/dev/null 2>&1 && echo services
 if command -v apache2ctl >/dev/null 2>&1 || command -v apachectl >/dev/null 2>&1 || command -v httpd >/dev/null 2>&1; then echo apache; fi
 if command -v mariadbd >/dev/null 2>&1 || command -v mysqld >/dev/null 2>&1 || command -v mariadb >/dev/null 2>&1 || command -v mysql >/dev/null 2>&1; then echo mysql; fi

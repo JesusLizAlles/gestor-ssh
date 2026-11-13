@@ -39,6 +39,14 @@ Es un proyecto de código abierto con [licencia MIT](LICENSE). Los instaladores 
   (en macOS, <kbd>Cmd</kbd>+<kbd>C</kbd>/<kbd>V</kbd>) o con el clic derecho. Al salir del shell, <kbd>Enter</kbd> abre otro.
 - **Módulos de administración** por servidor. Se activan en el diálogo del servidor («Detectar qué hay instalado» los
   marca solos) y aparecen debajo del servidor en el panel lateral; cada uno se abre en su pestaña:
+  - **Rendimiento**: gráficas de CPU (y espera a disco), carga 1/5/15 min con la línea de los núcleos, memoria y swap,
+    red (recibido/enviado) y E/S de disco, con cruceta compartida: al pasar el ratón por una se marca la misma hora en
+    todas. Arriba, los valores de ahora mismo y el tiempo encendido; abajo, el espacio libre de cada disco (`df`).
+    - *En directo*: lee `/proc` cada 5 s mientras la pestaña está abierta (guarda la última hora). No instala nada.
+    - *6 h, 24 h, 7 y 30 días*: el histórico sale de **sysstat** (`sar`/`sadf`), que guarda una muestra cada 10 minutos
+      aunque la app esté cerrada. Si no está instalado (o, como en Debian/Ubuntu, viene desactivado), la vista ofrece
+      instalarlo y activarlo con sudo (apt, dnf, yum, zypper o pacman). Debajo de cada gráfica, la media y el máximo del
+      periodo y cuándo fue.
   - **Servicios** (systemd): lista con buscador y filtros (en marcha, fallidos, todos); estado, desde cuándo, PID y
     memoria; arrancar, parar, reiniciar, recargar, habilitar/deshabilitar al inicio; registro de `journalctl` y fichero de
     la unidad (se abre en el editor). Parar, reiniciar y deshabilitar piden confirmación; en producción, todo.
@@ -111,7 +119,7 @@ desde el botón «Claude MCP» de la barra de estado (viene desactivado).
 | Nivel | Qué puede hacer Claude |
 | --- | --- |
 | Sin acceso | No ve el servidor. |
-| Solo lectura | `ssh_access_report` (fallos por IP con país, accesos correctos), `network_connections`, `active_sessions`, `fail2ban_status`, `firewall_status`, `services_list`, `service_logs`. |
+| Solo lectura | `ssh_access_report` (fallos por IP con país, accesos correctos), `network_connections`, `active_sessions`, `fail2ban_status`, `firewall_status`, `services_list`, `service_logs`, `server_performance` (CPU, carga, memoria, red y disco de ahora y, con sysstat, resumen e histórico del periodo). |
 | Ejecución con mi aprobación | Además `run_command`, `fail2ban_ban` y `service_action`: la app enseña el comando y no se ejecuta hasta pulsar «Ejecutar» (5 minutos para responder; si no, se rechaza). |
 | Ejecución sin preguntar | Igual, sin confirmación. En producción se rebaja siempre a «con mi aprobación». |
 
@@ -149,10 +157,13 @@ Extensiones). La extensión es un puente stdio ↔ HTTP (`src/mcp-bridge/bridge.
 | `src/main/modules.ts` | Llamadas de los módulos (servicios, Apache, MySQL), con sus argumentos validados con zod. |
 | `src/main/ssh/commands.ts` | Ejecución de scripts en el servidor, con sudo. |
 | `src/main/security.ts` | Llamadas del módulo de seguridad (ss, registro de sshd, who/last, fail2ban, cortafuegos). |
+| `src/main/performance.ts` | Llamadas del módulo de rendimiento: lectura de `/proc` y `df`, histórico con `sadf` e instalación de sysstat. |
 | `src/main/updater.ts` | Actualizaciones con electron-updater: buscar, descargar con progreso e instalar al reiniciar. |
 | `src/main/geoip.ts` | Descarga, comprobación y consulta local de la base de datos de países (mmdb-lib). |
 | `src/shared/security.ts` | Analizadores de `ss`, del registro de sshd, de `who` y de fail2ban, y clasificación de IPs. |
 | `src/shared/modules.ts` | Tipos de los módulos y analizadores de la salida de `systemctl`, `apachectl` y `mysql`. |
+| `src/shared/performance.ts` | Analizadores de `/proc`, `df` y `sadf -d`, cálculo de tasas entre lecturas y resúmenes. |
+| `src/shared/chart-scale.ts` | Escalas de las gráficas (divisiones redondas, marcas horarias). Las gráficas son SVG propio, sin librerías. |
 | `src/preload` | Puente mínimo que expone `window.api` y entrega los MessagePort de los terminales. |
 | `src/renderer` | Interfaz React. |
 | `tests` | Unitarios e integración contra un `sshd` desechable (Vitest). |
@@ -218,6 +229,9 @@ captura de la ventana y cierra la app (solo fuera de la app empaquetada).
   Sin sudo, `ss` no enseña los procesos de otros usuarios y el registro de accesos puede estar incompleto.
 - **Módulos**: necesitan systemd. Activar/desactivar sitios de Apache solo con la estructura de Debian/Ubuntu; en
   Red Hat y Arch se listan y se editan. MySQL sin sudo necesita un `~/.my.cnf` en el servidor.
+- **Rendimiento**: solo Linux (lee `/proc`). Sin sysstat solo hay datos desde que se abre la pestaña; con sysstat, la
+  resolución del histórico es la suya (10 minutos por defecto). La red no cuenta `lo` ni las interfaces virtuales de
+  contenedores y puentes; el disco cuenta los discos enteros (no particiones ni LVM, para no contar dos veces).
 - **SSH**: sin saltos encadenados (*jump hosts*), sin leer `~/.ssh/config` y sin reenvío de puertos todavía.
 - **Transferencias**: no se reanudan; si se corta la conexión, hay que volver a empezar. No se puede arrastrar ficheros
   desde el escritorio a la ventana.

@@ -1,10 +1,11 @@
 // Módulos de administración: vistas extra por servidor (servicios, Apache, MySQL…).
 // Aquí van los tipos que comparten los dos procesos y los analizadores de la salida de los comandos.
 
+import type { PerfHistory, PerfHours, PerfSample } from './performance'
 import type { ConnectionsResult, Fail2banResult, FirewallResult, SessionsResult, SshLogResult, SshPeriod } from './security'
 
-export type ModuleId = 'services' | 'apache' | 'mysql' | 'security'
-export const MODULE_IDS = ['services', 'apache', 'mysql', 'security'] as const satisfies readonly ModuleId[]
+export type ModuleId = 'performance' | 'services' | 'apache' | 'mysql' | 'security'
+export const MODULE_IDS = ['performance', 'services', 'apache', 'mysql', 'security'] as const satisfies readonly ModuleId[]
 
 export interface ModuleInfo {
   id: ModuleId
@@ -13,6 +14,11 @@ export interface ModuleInfo {
 }
 
 export const MODULES: readonly ModuleInfo[] = [
+  {
+    id: 'performance',
+    name: 'Rendimiento',
+    description: 'Gráficas de CPU, carga, memoria, red y disco: en directo y, con sysstat, el histórico de días atrás.'
+  },
   { id: 'services', name: 'Servicios', description: 'Servicios de systemd: estado, arrancar, parar, reiniciar, habilitar y registro.' },
   { id: 'apache', name: 'Apache', description: 'Estado, prueba de configuración, sitios (activar/desactivar), módulos y registro de errores.' },
   { id: 'mysql', name: 'MySQL / MariaDB', description: 'Estado del servicio, bases de datos con su tamaño, procesos en curso, configuración y registro.' },
@@ -130,6 +136,9 @@ export interface ModuleCalls {
   'security.fail2ban': { args: Record<string, never>; result: Fail2banResult }
   'security.ban': { args: { jail: string; ip: string; ban: boolean }; result: void }
   'security.firewall': { args: Record<string, never>; result: FirewallResult }
+  'performance.sample': { args: { disks: boolean }; result: PerfSample }
+  'performance.history': { args: { hours: PerfHours }; result: PerfHistory }
+  'performance.setup': { args: Record<string, never>; result: CommandReport }
 }
 
 export type ModuleCall = keyof ModuleCalls

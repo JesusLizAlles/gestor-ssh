@@ -88,6 +88,26 @@ describe('servidor MCP', () => {
         if (call === 'security.sessions') return { who: [], last: '' }
         if (call === 'security.firewall') throw new Error(SUDO_PASSWORD_REQUIRED)
         if (call === 'security.ban') return undefined
+        if (call === 'performance.sample') {
+          const n = calls.filter((c) => c.call === 'performance.sample').length
+          return {
+            at: n * 2000,
+            uptime: 1000 + n * 2,
+            cpus: 2,
+            cpu: n === 1 ? [100, 0, 50, 800, 50, 0, 0, 0] : [160, 0, 70, 900, 70, 0, 0, 0],
+            load: [0.5, 0.4, 0.3],
+            memTotal: 4000,
+            memAvailable: 1000,
+            swapTotal: 0,
+            swapFree: 0,
+            netRx: n * 1000,
+            netTx: n * 100,
+            diskRead: 0,
+            diskWrite: n * 4096,
+            disks: (args as { disks: boolean }).disks ? [{ filesystem: '/dev/vda1', type: 'ext4', mount: '/', size: 100, used: 90, available: 10 }] : null
+          }
+        }
+        if (call === 'performance.history') return { status: 'missing', points: [], interval: null, collecting: null, warning: null }
         throw new Error(`inesperado ${call}`)
       }) as never,
       exec: async (_s, command, { sudo }) => {
@@ -162,6 +182,27 @@ describe('servidor MCP', () => {
       ['ssh_access_report', true],
       ['firewall_status', false]
     ])
+  })
+
+  it('rendimiento: valores de ahora y aviso si no hay histórico', async () => {
+    await mcp.setAccess('a', 'read')
+    await mcp.setEnabled(true)
+    const client = await connect()
+    const data = JSON.parse(text(await client.callTool({ name: 'server_performance', arguments: { server: 'Web', hours: 168 } })))
+    await client.close()
+    expect(calls.map((c) => c.call)).toEqual(['performance.sample', 'performance.sample', 'performance.history'])
+    expect(calls[2]!.args).toEqual({ hours: 168 })
+    expect(data.current).toMatchObject({
+      cpuPercent: 40,
+      iowaitPercent: 10,
+      cpus: 2,
+      memory: { totalBytes: 4000, usedBytes: 3000, percent: 75 },
+      network: { rxBytesPerSec: 500, txBytesPerSec: 50 },
+      disk: { writeBytesPerSec: 2048 },
+      filesystems: [{ mount: '/', percent: 90 }]
+    })
+    expect(data.history).toMatchObject({ status: 'missing' })
+    expect(data.history.note).toMatch(/sysstat/)
   })
 
   it('con solo lectura no deja ejecutar', async () => {

@@ -314,6 +314,38 @@ describe.skipIf(!sshdAvailable)('contra un sshd real', () => {
       await expect(runModuleCall(session, 'files.tail', { path: 'relativa', lines: 10 })).rejects.toThrow(/no válida/)
     })
 
+    it('rendimiento: lee /proc, calcula tasas y consulta sysstat', async () => {
+      const session = sessions.get(config.id)
+      expect(await detectModules(session)).toContain('performance')
+      const { pointFromSamples } = await import('@shared/performance')
+      const first = (await runModuleCall(session, 'performance.sample', { disks: true })) as import('@shared/performance').PerfSample
+      expect(first.cpus).toBeGreaterThan(0)
+      expect(first.cpu).toHaveLength(8)
+      expect(first.memTotal).toBeGreaterThan(0)
+      expect(first.load).toHaveLength(3)
+      expect(first.disks?.some((d) => d.mount === '/')).toBe(true)
+      await new Promise((r) => setTimeout(r, 1100))
+      const second = (await runModuleCall(session, 'performance.sample', { disks: false })) as import('@shared/performance').PerfSample
+      expect(second.disks).toBeNull()
+      const point = pointFromSamples(first, second)
+      expect(point.cpu).toBeGreaterThanOrEqual(0)
+      expect(point.cpu).toBeLessThanOrEqual(100)
+      expect(point.netRx).toBeGreaterThanOrEqual(0)
+      expect(point.mem).toBeGreaterThan(0)
+
+      const history = (await runModuleCall(session, 'performance.history', { hours: 24 })) as import('@shared/performance').PerfHistory
+      const hasSadf = (() => {
+        try {
+          execFileSync('sh', ['-c', 'command -v sadf'], { stdio: 'ignore' })
+          return true
+        } catch {
+          return false
+        }
+      })()
+      expect(history.status === 'missing').toBe(!hasSadf)
+      await expect(runModuleCall(session, 'performance.history', { hours: 5 })).rejects.toThrow()
+    })
+
     it('seguridad: ve la conexión de la propia app, sesiones y registro (sin sudo)', async () => {
       const session = sessions.get(config.id)
       const result = (await runModuleCall(session, 'security.connections', { sudo: false })) as {

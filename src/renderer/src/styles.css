@@ -1402,3 +1402,193 @@ button.link:hover:not(:disabled) {
 .update-dialog a {
   color: var(--accent-hover);
 }
+
+/* Rendimiento */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.segmented button {
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text-dim);
+  height: 26px;
+}
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+.segmented button.on {
+  background: var(--bg-select);
+  color: var(--text);
+}
+.notice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.notice-row > span {
+  flex: 1;
+}
+.notice-row button {
+  flex: none;
+}
+.stat-sub {
+  color: var(--text-dim);
+}
+.chart-caption {
+  margin: -6px 0 10px;
+}
+.chart-grid-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.chart-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px 4px;
+  min-width: 0;
+  transition: opacity 0.15s;
+}
+.chart-card.stale {
+  opacity: 0.55;
+}
+.chart-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  min-height: 20px;
+}
+.chart-head .spacer {
+  flex: 1;
+}
+.chart-title {
+  font-weight: 600;
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  color: var(--text-dim);
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend-key {
+  display: inline-block;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  flex: none;
+}
+.legend-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.chart-plot {
+  position: relative;
+  height: 170px;
+}
+.chart-plot svg {
+  display: block;
+  cursor: crosshair;
+}
+.chart-grid {
+  stroke: var(--border);
+  stroke-opacity: 0.55;
+  stroke-width: 1;
+}
+.chart-grid.vertical {
+  stroke-opacity: 0.3;
+}
+.chart-axis {
+  fill: var(--text-dim);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.chart-reference {
+  stroke: var(--text-dim);
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+  opacity: 0.7;
+}
+.chart-crosshair {
+  stroke: var(--text-dim);
+  stroke-width: 1;
+}
+.chart-dot {
+  stroke: var(--bg-panel);
+  stroke-width: 2;
+}
+.chart-tooltip {
+  position: absolute;
+  top: 6px;
+  min-width: 150px;
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+.chart-tooltip-time {
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 18px;
+}
+.chart-tooltip-row strong {
+  font-variant-numeric: tabular-nums;
+}
+.disk-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 980px;
+}
+.disk-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 180px) minmax(120px, 1fr) auto 70px;
+  align-items: center;
+  gap: 12px;
+}
+.disk-mount {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.disk-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.disk-bar > div {
+  height: 100%;
+  border-radius: 4px;
+  background: #3987e5;
+}
+.disk-bar.warn > div {
+  background: var(--warn);
+}
+.disk-bar.error > div {
+  background: var(--danger);
+}
+.disk-figures {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -49,7 +49,7 @@ describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
       privateKeyPath: sshd.clientKeyPath,
       environment: 'test',
       initialPath: www,
-      modules: ['services', 'apache', 'mysql', 'security']
+      modules: ['performance', 'services', 'apache', 'mysql', 'security']
     }
     await writeFile(join(userData, 'servers.json'), JSON.stringify({ version: 1, servers: [server] }))
 
@@ -244,6 +244,38 @@ describe.skipIf(!sshdAvailable)('Gestor SSH (E2E)', () => {
     await body.locator('.geo-attribution').waitFor({ timeout: 60_000 })
     await expect.poll(() => body.locator('.geo-notice').count()).toBe(0)
     await shot('15-seguridad-paises')
+  })
+
+  it('rendimiento: tarjetas, gráficas en directo con cruceta y espacio en disco', async () => {
+    await page.locator('.module-row', { hasText: 'Rendimiento' }).click()
+    const body = page.locator('.tab-body:not(.hidden)')
+    await body.locator('.chart-card').first().waitFor({ timeout: 15_000 })
+    await body.locator('.disk-row').first().waitFor({ timeout: 15_000 })
+    // La CPU necesita dos lecturas (una cada 5 s).
+    await expect.poll(() => body.locator('.stat-card .stat-value').first().textContent(), { timeout: 20_000 }).toMatch(/%$/)
+    const hasSadf = (() => {
+      try {
+        execFileSync('sh', ['-c', 'command -v sadf'], { stdio: 'ignore' })
+        return true
+      } catch {
+        return false
+      }
+    })()
+    if (!hasSadf) {
+      // Sin sysstat: se pasa solo a directo y se ofrece instalarlo.
+      await body.locator('.notice', { hasText: 'sysstat' }).waitFor()
+      await expect(body.locator('.segmented button.on').textContent()).resolves.toBe('En directo')
+    }
+    await page.waitForTimeout(6_000)
+    const plot = body.locator('.chart-plot svg').first()
+    const box = (await plot.boundingBox())!
+    await page.mouse.move(box.x + box.width - 30, box.y + box.height / 2)
+    await body.locator('.chart-tooltip').first().waitFor()
+    await expect(body.locator('.chart-crosshair').count()).resolves.toBe(5)
+    await shot('16-rendimiento')
+    await page.mouse.move(0, 0)
+    await body.locator('.module-body').evaluate((el) => el.scrollTo(0, el.scrollHeight))
+    await shot('17-rendimiento-discos')
   })
 
   it('Claude MCP: acceso por servidor, comando con aprobación y extensión', async () => {
