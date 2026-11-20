@@ -31,7 +31,7 @@ export function wrapScript(script: string): string {
 }
 
 /** Ejecuta una línea de comandos tal cual en el servidor y recoge su salida. */
-export function execRaw(session: ServerSession, command: string, input: string | null, opts: RunOptions = {}): Promise<RunResult> {
+export function execRaw(session: Pick<ServerSession, 'client'>, command: string, input: string | null, opts: RunOptions = {}): Promise<RunResult> {
   const maxBytes = opts.maxBytes ?? 4 * 1024 * 1024
   return new Promise((resolve, reject) => {
     session.client.exec(command, (err, stream) => {

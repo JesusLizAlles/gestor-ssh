@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, readFile, readdir, stat, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { ServerConfig, TerminalToRenderer, TransferInfo } from '@shared/types'
+import { NO_SFTP_ERROR, type ServerConfig, type TerminalToRenderer, type TransferInfo } from '@shared/types'
 import { SessionManager } from '../src/main/ssh/sessions'
 import { startTerminal, type TerminalChannel } from '../src/main/ssh/terminal'
 import { runScript } from '../src/main/ssh/commands'
@@ -388,5 +388,60 @@ describe.skipIf(!sshdAvailable)('contra un sshd real', () => {
       const tail = (await runModuleCall(session, 'files.tail', { path: join(sshd.dir, 'sftp', 'b2.txt'), lines: 10 })) as { text: string }
       expect(tail.text).toBe('dos')
     })
+  })
+})
+
+describe.skipIf(!sshdAvailable)('servidor sin SFTP', () => {
+  let sshd: TestSshd
+  let config: ServerConfig
+  let sessions: SessionManager
+
+  beforeAll(async () => {
+    sshd = await startSshd({ sftp: false })
+    config = {
+      id: 'nas',
+      name: 'NAS',
+      host: sshd.host,
+      port: sshd.port,
+      username: sshd.username,
+      authMethod: 'privateKey',
+      privateKeyPath: sshd.clientKeyPath,
+      environment: 'dev',
+      initialPath: '',
+      modules: []
+    }
+    sessions = new SessionManager({ knownHosts: new KnownHosts(await tempDir()), confirmHost: async () => true })
+  })
+
+  afterAll(async () => {
+    sessions?.closeAll()
+    await sshd?.stop()
+  })
+
+  it('conecta igualmente, sin explorador pero con comandos', async () => {
+    const result = await sessions.connect(config, {})
+    expect(result.sftp).toBe(false)
+    expect(result.home.startsWith('/')).toBe(true)
+    const session = sessions.get(config.id)
+    await expect(session.sftp()).rejects.toThrow(NO_SFTP_ERROR)
+    await expect(session.dedicatedSftp()).rejects.toThrow(NO_SFTP_ERROR)
+    const run = await runScript(session, 'echo hola')
+    expect(run.stdout.toString().trim()).toBe('hola')
+  })
+
+  it('la prueba de conexión avisa de que no hay SFTP', async () => {
+    await expect(sessions.test({ ...config, id: 'prueba' }, {})).resolves.toMatchObject({ sftp: false, system: expect.any(String) })
+  })
+
+  it('«solo terminal» no intenta SFTP aunque el servidor lo tenga', async () => {
+    const normal = await startSshd()
+    try {
+      const manager = new SessionManager({ knownHosts: new KnownHosts(await tempDir()), confirmHost: async () => true })
+      const result = await manager.connect({ ...config, id: 'solo', port: normal.port, privateKeyPath: normal.clientKeyPath, terminalOnly: true }, {})
+      expect(result.sftp).toBe(false)
+      manager.closeAll()
+    } finally {
+      await normal.stop()
+    }
   })
 })

@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { Client } from 'ssh2'
-import type { ConnectResult, ServerConfig, TestResult } from '@shared/types'
+import { NO_SFTP_ERROR, type ConnectResult, type ServerConfig, type TestResult } from '@shared/types'
 import type { KnownHosts } from '../store/known-hosts'
 import type { Secrets } from '../store/secrets'
-import { runScript } from './commands'
+import { execRaw, runScript } from './commands'
 import { connectSsh, type HostDecision, type SshAuth } from './connect'
 import { openSftp, Sftp } from './sftp'
 
@@ -19,9 +19,25 @@ export interface SessionDeps {
   timeoutMs?: number
 }
 
+/**
+ * Carpeta personal sin SFTP: los canales de ejecución empiezan en ella, así que basta con `pwd`
+ * (vale en sh, fish, csh…). Si el servidor tampoco deja ejecutar comandos, se queda en `~`.
+ */
+async function homeByCommand(client: Client): Promise<string> {
+  try {
+    const result = await execRaw({ client }, 'pwd', null, { timeoutMs: 10_000, maxBytes: 4096 })
+    const path = result.stdout.toString('utf8').trim().split('\n')[0]?.trim() ?? ''
+    return result.code === 0 && path.startsWith('/') ? path : '~'
+  } catch {
+    return '~'
+  }
+}
+
 /** Una conexión abierta a un servidor. Sobre ella van el explorador, los terminales y las transferencias. */
 export class ServerSession {
   private browser: Promise<Sftp> | null = null
+  /** false = servidor sin SFTP (o configurado como solo terminal): solo terminal y comandos. */
+  readonly hasSftp: boolean
   private closedByUs = false
   /** Contraseña de sudo de esta conexión (solo en memoria). Al empezar, la de la conexión si la hay. */
   sudoPassword: string | null = null
@@ -32,14 +48,22 @@ export class ServerSession {
     readonly client: Client,
     readonly fingerprint: string,
     readonly home: string,
-    browser: Sftp
+    browser: Sftp | null
   ) {
-    this.browser = Promise.resolve(browser)
-    this.watchBrowser(browser)
+    this.hasSftp = browser !== null
+    if (browser) {
+      this.browser = Promise.resolve(browser)
+      this.watchBrowser(browser)
+    }
+  }
+
+  get result(): ConnectResult {
+    return { fingerprint: this.fingerprint, home: this.home, sftp: this.hasSftp }
   }
 
   /** Canal SFTP del explorador; si se cerró (p. ej. el servidor lo cortó), se abre otro. */
   sftp(): Promise<Sftp> {
+    if (!this.hasSftp) return Promise.reject(new Error(NO_SFTP_ERROR))
     this.browser ??= openSftp(this.client).then((raw) => {
       const sftp = new Sftp(raw)
       this.watchBrowser(sftp)
@@ -54,6 +78,7 @@ export class ServerSession {
 
   /** Canal SFTP propio, para una transferencia: así se puede cancelar cerrándolo. */
   async dedicatedSftp(): Promise<Sftp> {
+    if (!this.hasSftp) throw new Error(NO_SFTP_ERROR)
     return new Sftp(await openSftp(this.client))
   }
 
@@ -99,15 +124,14 @@ export class SessionManager {
 
   async connect(config: ServerConfig, secrets: Secrets): Promise<ConnectResult> {
     const existing = this.sessions.get(config.id)
-    if (existing) return { fingerprint: existing.fingerprint, home: existing.home }
+    if (existing) return existing.result
     let pending = this.connecting.get(config.id)
     if (!pending) {
       pending = this.open(config, secrets)
       this.connecting.set(config.id, pending)
     }
     try {
-      const session = await pending
-      return { fingerprint: session.fingerprint, home: session.home }
+      return (await pending).result
     } finally {
       this.connecting.delete(config.id)
     }
@@ -126,7 +150,7 @@ export class SessionManager {
         (r) => (r.code === 0 ? r.stdout.toString('utf8').trim() || null : null),
         () => null
       )
-      return { fingerprint: session.fingerprint, home: session.home, system }
+      return { ...session.result, system }
     } finally {
       session.close()
     }
@@ -161,8 +185,10 @@ export class SessionManager {
     })
     let session: ServerSession
     try {
-      const sftp = new Sftp(await openSftp(client))
-      const home = await sftp.realpath('.')
+      // Hay servidores (NAS, routers, shells restringidos) que no tienen el subsistema SFTP: entonces la
+      // conexión sigue valiendo para el terminal y los comandos, sin explorador de ficheros.
+      const sftp = config.terminalOnly ? null : await openSftp(client).then((raw) => new Sftp(raw), () => null)
+      const home = sftp ? await sftp.realpath('.') : await homeByCommand(client)
       session = new ServerSession(config, client, fingerprint, home, sftp)
       if (config.authMethod === 'password') session.sudoPassword = secrets.password ?? null
     } catch (err) {

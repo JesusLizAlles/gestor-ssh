@@ -56,7 +56,8 @@ async function waitForPort(port: number, timeoutMs = 5000): Promise<void> {
   throw new Error(`sshd no arrancó en el puerto ${port}`)
 }
 
-export async function startSshd(): Promise<TestSshd> {
+/** `sftp: false` = sin el subsistema SFTP, como algunos NAS («Unable to start subsystem sftp»). */
+export async function startSshd(opts: { sftp?: boolean } = {}): Promise<TestSshd> {
   const root = await mkdtemp(join(tmpdir(), 'gestor-ssh-sshd-'))
   const keygen = (file: string, passphrase = '') => execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', passphrase, '-f', join(root, file)])
   keygen('host_key')
@@ -78,7 +79,7 @@ export async function startSshd(): Promise<TestSshd> {
       'PubkeyAuthentication yes',
       'UsePAM no',
       'StrictModes no',
-      `Subsystem sftp ${SFTP_SERVER}`,
+      ...(opts.sftp === false ? [] : [`Subsystem sftp ${SFTP_SERVER}`]),
       'LogLevel ERROR'
     ].join('\n')
   )

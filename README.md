@@ -26,6 +26,9 @@ Es un proyecto de código abierto con [licencia MIT](LICENSE). Los instaladores 
   - Crear carpeta o fichero, renombrar (<kbd>F2</kbd>), eliminar (<kbd>Supr</kbd>; las carpetas con todo su contenido, sin
     seguir enlaces), copiar ruta, abrir un terminal en la carpeta.
   - Teclado: flechas, <kbd>Enter</kbd> abre, <kbd>Retroceso</kbd> sube, <kbd>F5</kbd> actualiza.
+  - **Servidores sin SFTP** (NAS, routers…): si el servidor no lo permite («Unable to start subsystem sftp»), la conexión
+    sigue valiendo para el terminal y los módulos, sin explorador ni transferencias. Con «Solo terminal (sin SFTP)» en el
+    diálogo del servidor ni siquiera se intenta.
 - **Transferencias** por SFTP (no SCP):
   - Descargar ficheros o carpetas completas; subir ficheros o una carpeta. Se conservan los permisos (el bit de ejecución).
   - Cola con progreso, velocidad y cancelación; lo que queda a medias se borra.

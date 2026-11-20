@@ -14,7 +14,8 @@ function emptyDraft(): Draft {
     privateKeyPath: '',
     environment: 'dev',
     initialPath: '',
-    modules: []
+    modules: [],
+    terminalOnly: false
   }
 }
 
@@ -101,7 +102,12 @@ export function ServerDialog({ initial, template, secretStatus, onClose, onSaved
     setResult(null)
     try {
       const r = await window.api.testServer(input())
-      setResult({ kind: 'ok', text: `Conexión correcta. ${r.system ? `${r.system}. ` : ''}Carpeta personal: ${r.home}. Huella: ${r.fingerprint}` })
+      const files = r.sftp
+        ? `Carpeta personal: ${r.home}.`
+        : draft.terminalOnly
+          ? 'Solo terminal (sin SFTP).'
+          : 'El servidor no permite SFTP: se usará solo el terminal.'
+      setResult({ kind: r.sftp || draft.terminalOnly ? 'ok' : 'warn', text: `Conexión correcta. ${r.system ? `${r.system}. ` : ''}${files} Huella: ${r.fingerprint}` })
     } catch (err) {
       setResult({ kind: 'error', text: (err as Error).message })
     } finally {
@@ -246,7 +252,22 @@ export function ServerDialog({ initial, template, secretStatus, onClose, onSaved
             </select>
 
             <label htmlFor="srv-path">Carpeta inicial</label>
-            <input id="srv-path" value={draft.initialPath} placeholder="Carpeta personal (~)" onChange={(e) => set('initialPath', e.target.value)} />
+            <input
+              id="srv-path"
+              value={draft.initialPath}
+              placeholder="Carpeta personal (~)"
+              disabled={!!draft.terminalOnly}
+              onChange={(e) => set('initialPath', e.target.value)}
+            />
+
+            <span />
+            <label className="check" title="Para NAS, routers y otros equipos sin el servicio SFTP">
+              <input type="checkbox" checked={!!draft.terminalOnly} onChange={(e) => set('terminalOnly', e.target.checked)} />
+              <span>
+                Solo terminal (sin SFTP)
+                <span className="note"> — sin explorador de ficheros ni transferencias</span>
+              </span>
+            </label>
 
             <label style={{ alignSelf: 'start', paddingTop: 4 }}>Módulos</label>
             <div className="module-picker">

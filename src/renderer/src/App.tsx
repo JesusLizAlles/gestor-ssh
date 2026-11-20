@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { basename } from '@shared/remote-path'
 import { cdCommand } from '@shared/shell'
-import type { HostKeyRequest, SecretStorageStatus, ServerSummary, TransferInfo } from '@shared/types'
+import type { ConnectResult, HostKeyRequest, SecretStorageStatus, ServerSummary, TransferInfo } from '@shared/types'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { ContextMenu, type MenuItem } from './components/ContextMenu'
 import { EditorView } from './components/EditorView'
@@ -22,8 +22,8 @@ import { moduleInfo, type ModuleId } from '@shared/modules'
 
 type ConnState =
   | { state: 'connecting' }
-  | { state: 'connected'; home: string; fingerprint: string }
-  | { state: 'error'; error: string; home?: string; fingerprint?: string }
+  | ({ state: 'connected' } & ConnectResult)
+  | ({ state: 'error'; error: string } & Partial<ConnectResult>)
 
 interface BaseTab {
   id: string
@@ -70,7 +70,7 @@ export function App() {
     const offSession = window.api.onSession((event) => {
       setConns((c) => {
         const previous = c[event.serverId]
-        const kept = previous && previous.state === 'connected' ? { home: previous.home, fingerprint: previous.fingerprint } : {}
+        const kept = previous && previous.state === 'connected' ? { home: previous.home, fingerprint: previous.fingerprint, sftp: previous.sftp } : {}
         return { ...c, [event.serverId]: { state: 'error', error: event.reason, ...kept } }
       })
     })
@@ -90,18 +90,18 @@ export function App() {
     setActiveTabId(tab.id)
   }
 
-  /** Conecta (si hace falta) y devuelve la carpeta personal; null si no se pudo. */
+  /** Conecta (si hace falta) y devuelve los datos de la conexión; null si no se pudo. */
   const ensureConnected = useCallback(
-    async (server: ServerSummary): Promise<string | null> => {
+    async (server: ServerSummary): Promise<ConnectResult | null> => {
       const current = conns[server.id]
-      if (current?.state === 'connected') return current.home
+      if (current?.state === 'connected') return current
       setConns((c) => ({ ...c, [server.id]: { state: 'connecting' } }))
       try {
         const result = await window.api.connect(server.id)
-        setConns((c) => ({ ...c, [server.id]: { state: 'connected', home: result.home, fingerprint: result.fingerprint } }))
+        setConns((c) => ({ ...c, [server.id]: { state: 'connected', ...result } }))
         // Las pestañas que se quedaron sin conexión vuelven a cargar donde estaban.
         setTabs((list) => list.map((t) => (t.serverId === server.id && t.kind === 'files' ? { ...t, startPath: t.path, epoch: t.epoch + 1 } : t)))
-        return result.home
+        return result
       } catch (err) {
         setConns((c) => ({ ...c, [server.id]: { state: 'error', error: (err as Error).message } }))
         return null
@@ -113,10 +113,16 @@ export function App() {
   const openFiles = async (server: ServerSummary) => {
     setSelectedServerId(server.id)
     const existing = tabs.find((t) => t.serverId === server.id && t.kind === 'files')
-    const home = await ensureConnected(server)
-    if (home === null) return
+    const result = await ensureConnected(server)
+    if (result === null) return
+    // Sin SFTP no hay explorador: se va al terminal (el que ya esté abierto, o uno nuevo).
+    if (!result.sftp) {
+      const terminal = tabs.find((t) => t.serverId === server.id && t.kind === 'terminal')
+      if (terminal) return setActiveTabId(terminal.id)
+      return addTab({ id: crypto.randomUUID(), serverId: server.id, kind: 'terminal', title: null })
+    }
     if (existing) return setActiveTabId(existing.id)
-    const start = server.initialPath.trim() || home
+    const start = server.initialPath.trim() || result.home
     addTab({ id: crypto.randomUUID(), serverId: server.id, kind: 'files', startPath: start, path: start, epoch: 0 })
   }
 
@@ -177,10 +183,16 @@ export function App() {
     setTabs((list) => list.map((t) => (t.id === id ? ({ ...t, ...patch } as Tab) : t)))
   }, [])
 
+  /** Servidor sin explorador de ficheros: configurado como solo terminal o sin SFTP en la conexión abierta. */
+  const terminalOnly = (server: ServerSummary): boolean => {
+    const conn = conns[server.id]
+    return !!server.terminalOnly || (conn?.state === 'connected' && !conn.sftp)
+  }
+
   const serverMenu = (server: ServerSummary, x: number, y: number) => {
     const connected = conns[server.id]?.state === 'connected'
     const items: MenuItem[] = [
-      { label: 'Abrir ficheros', onSelect: () => void openFiles(server) },
+      ...(terminalOnly(server) ? [] : [{ label: 'Abrir ficheros', onSelect: () => void openFiles(server) }]),
       { label: 'Abrir terminal', onSelect: () => void openTerminal(server) },
       ...server.modules.map((id) => ({ label: `Abrir ${moduleInfo(id).name}`, onSelect: () => void openModule(server, id) })),
       connected
@@ -272,9 +284,11 @@ export function App() {
                   {server.environment !== 'dev' && <span className={`badge ${server.environment}`}>{ENV_LABEL[server.environment]}</span>}
                   <span className="host">{server.host}</span>
                   <div className="actions">
-                    <button className="icon" title="Ficheros" onClick={(e) => (e.stopPropagation(), void openFiles(server))}>
-                      <Icon name="folder" />
-                    </button>
+                    {!terminalOnly(server) && (
+                      <button className="icon" title="Ficheros" onClick={(e) => (e.stopPropagation(), void openFiles(server))}>
+                        <Icon name="folder" />
+                      </button>
+                    )}
                     <button className="icon" title="Terminal" onClick={(e) => (e.stopPropagation(), void openTerminal(server))}>
                       <Icon name="terminal" />
                     </button>
@@ -456,6 +470,9 @@ export function App() {
               {activeServer.port !== 22 ? `:${activeServer.port}` : ''}
             </span>
             {activeConn?.state === 'connected' && <span className="mono" title="Huella del servidor">{activeConn.fingerprint}</span>}
+            {activeConn?.state === 'connected' && !activeConn.sftp && (
+              <span title="El servidor no tiene SFTP (o está configurado como solo terminal): no hay explorador de ficheros">Solo terminal</span>
+            )}
           </>
         ) : (
           <span>{servers.length} servidores</span>

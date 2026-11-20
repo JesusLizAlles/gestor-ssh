@@ -19,6 +19,11 @@ export interface ServerConfig {
   initialPath: string
   /** Módulos de administración activados para este servidor. */
   modules: ModuleId[]
+  /**
+   * Solo terminal: no se intenta abrir SFTP (NAS, routers… que no lo tienen). Sin el campo o en false
+   * se intenta igualmente, y si el servidor no lo permite la conexión sigue sin explorador.
+   */
+  terminalOnly?: boolean
 }
 
 export type SecretKey = 'password' | 'passphrase'
@@ -42,8 +47,10 @@ export interface SecretStorageStatus {
 
 export interface ConnectResult {
   fingerprint: string
-  /** Carpeta personal del usuario en el servidor (ruta absoluta). */
+  /** Carpeta personal del usuario en el servidor (ruta absoluta; `~` si no se pudo averiguar). */
   home: string
+  /** El servidor permite SFTP: hay explorador de ficheros, editor y transferencias. */
+  sftp: boolean
 }
 
 export interface TestResult extends ConnectResult {
@@ -260,6 +267,9 @@ export interface GeoIpStatus {
 
 /** Mensaje de error al guardar un fichero que otro modificó mientras estaba abierto. */
 export const FILE_CHANGED_ERROR = 'El fichero ha cambiado en el servidor desde que lo abriste'
+
+/** Mensaje de error al usar el explorador, el editor o las transferencias en un servidor sin SFTP. */
+export const NO_SFTP_ERROR = 'Este servidor no tiene SFTP: solo está disponible el terminal'
 
 /** Ficheros más grandes no se abren en el editor. */
 export const MAX_EDIT_BYTES = 5 * 1024 * 1024
